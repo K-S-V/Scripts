@@ -101,6 +101,14 @@
         }
     }
 
+  function ShowHeader($headers)
+    {
+      $len    = strlen($headers);
+      $width  = (int) ((80 - $len) / 2) + $len;
+      $format = "\n%" . $width . "s\n\n";
+      printf($format, $headers);
+    }
+
   function ReadByte($str, $pos)
     {
       return intval(bin2hex(substr($str, $pos, 1)), 16);
@@ -196,7 +204,7 @@
           rename($files[$i], $baseFilename . ($i + 1));
     }
 
-  echo "\nKSV Adobe HDS Downloader\n\n";
+  ShowHeader("KSV Adobe HDS Downloader");
   $flvHeader    = pack("H*", "464c5601050000000900000000");
   $baseFilename = "";
   $debug        = false;

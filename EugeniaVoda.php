@@ -1,5 +1,13 @@
 <?php
-  echo "\nKSV EugeniaVoda Downloader\n\n";
+  function ShowHeader($headers)
+    {
+      $len    = strlen($headers);
+      $width  = (int) ((80 - $len) / 2) + $len;
+      $format = "\n%" . $width . "s\n\n";
+      printf($format, $headers);
+    }
+
+  ShowHeader("KSV EugeniaVoda Downloader");
   $format = "%-7s : %s\n";
 
   if ($argc <= 2)

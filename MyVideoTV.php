@@ -1,8 +1,16 @@
 <?php
+  function ShowHeader($headers)
+    {
+      $len    = strlen($headers);
+      $width  = (int) ((80 - $len) / 2) + $len;
+      $format = "\n%" . $width . "s\n\n";
+      printf($format, $headers);
+    }
+
+  ShowHeader("KSV MyVideoTV Downloader");
+
   /* Open the cipher */
   $td = mcrypt_module_open('arcfour', '', 'stream', '');
-
-  /* Create the IV */
   $iv = "";
 
   /* Create key */

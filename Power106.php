@@ -27,7 +27,15 @@
       return $filename;
     }
 
-  echo "\nKSV Power106 Downloader\n\n";
+  function ShowHeader($headers)
+    {
+      $len    = strlen($headers);
+      $width  = (int) ((80 - $len) / 2) + $len;
+      $format = "\n%" . $width . "s\n\n";
+      printf($format, $headers);
+    }
+
+  ShowHeader("KSV Power106 Downloader");
   $format = "%-8s : %s\n";
 
   if ($argc <= 2)

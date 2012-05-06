@@ -231,6 +231,16 @@
       return $filename;
     }
 
+  function ShowHeader($headers)
+    {
+      global $cli;
+      $len    = strlen($headers);
+      $width  = (int) ((80 - $len) / 2) + $len;
+      $format = "\n%" . $width . "s\n\n";
+      if (!$cli->getParam('quiet'))
+          printf($format, $headers);
+    }
+
   function KeyName(array $a, $pos)
     {
       $temp = array_slice($a, $pos, 1, true);
@@ -441,7 +451,7 @@
     }
 
   // Global code starts here
-  $header        = "\nKSV WeebTV Downloader\n\n";
+  $header        = "KSV WeebTV Downloader";
   $format        = "%-8s : %s\n";
   $ChannelFormat = "%2d) %-22.22s";
 
@@ -458,7 +468,7 @@
   $cli = new CLI();
   $cc  = new cURL();
 
-  qecho($header);
+  ShowHeader($header);
   if ($cli->getParam('help'))
     {
       $cli->displayHelp();
@@ -501,7 +511,7 @@
           if ($FirstRun)
               $FirstRun = false;
           else
-              echo $header;
+              ShowHeader($header);
           Display($ChannelList, $ChannelFormat, 3);
           echo "Enter Channel Number : ";
           $channel = trim(fgets(STDIN));

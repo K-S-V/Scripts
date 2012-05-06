@@ -89,7 +89,6 @@
               printf(" --%-13s%s\n", $key, $value);
           foreach (self::$ACCEPTED[1] as $key => $value)
               printf(" --%-13s%s\n", $key . " [param]", $value);
-          Close("");
         }
     }
 
@@ -418,6 +417,16 @@
       return $filename;
     }
 
+  function ShowHeader($headers)
+    {
+      global $cli;
+      $len    = strlen($headers);
+      $width  = (int) ((80 - $len) / 2) + $len;
+      $format = "\n%" . $width . "s\n\n";
+      if (!$cli->getParam('quiet'))
+          printf($format, $headers);
+    }
+
   function KeyName(array $a, $pos)
     {
       $temp = array_slice($a, $pos, 1, true);
@@ -602,7 +611,7 @@
     }
 
   // Global code starts here
-  $header        = "\nKSV PlayTV Downloader\n\n";
+  $header        = "KSV PlayTV Downloader";
   $format        = "%-8s : %s\n";
   $ChannelFormat = "%2d) %-22.22s";
 
@@ -622,11 +631,11 @@
   $xxtea     = new Crypt_XXTEA();
   $cc->proxy = '';
 
-  qecho($header);
+  ShowHeader($header);
   if ($cli->getParam('help'))
     {
       $cli->displayHelp();
-      exit(0);
+      Close("");
     }
 
   if ($cli->getParam('url'))
@@ -652,7 +661,7 @@
           if ($FirstRun)
               $FirstRun = false;
           else
-              echo $header;
+              ShowHeader($header);
           Display($ChannelList, $ChannelFormat, 3);
           echo "Enter Channel Number : ";
           $channel = trim(fgets(STDIN));
