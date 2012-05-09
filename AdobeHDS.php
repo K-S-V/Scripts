@@ -1,7 +1,12 @@
 <?php
   define('AUDIO', 0x08);
   define('VIDEO', 0x09);
-  define('DATA', 0x12);
+  define('SCRIPT_DATA', 0x12);
+  define('FRAME_TYPE_INFO', 0x05);
+  define('CODEC_ID_AVC', 0x07);
+  define('CODEC_ID_AAC', 0x0A);
+  define('AVC_SEQUENCE_HEADER', 0x00);
+  define('AAC_SEQUENCE_HEADER', 0x00);
 
   class CLI
     {
@@ -175,7 +180,7 @@
     {
       global $debug;
       if ($debug)
-          echo $msg . "\n";
+          fwrite(STDERR, $msg . "\n");
     }
 
   function RenameFragments($baseFilename)
@@ -212,8 +217,6 @@
   $tagHeaderLen = 11;
   $prevTagSize  = 4;
   $fragCount    = 0;
-  $initialAP    = true;
-  $initialVP    = true;
   $noFrameSkip  = false;
   $pAudioTS     = -1;
   $pVideoTS     = -1;
@@ -259,10 +262,13 @@
   else
       exit(1);
 
+  $pAVC_Header       = false;
+  $pAAC_Header       = false;
+  $AVC_HeaderWritten = false;
+  $AAC_HeaderWritten = false;
+  $timeStart         = microtime(true);
   for ($i = 1; $i <= $fragCount; $i++)
     {
-      $firstAP = true;
-      $firstVP = true;
       $fragLen = 0;
       $fragPos = 0;
       $mdat    = false;
@@ -299,9 +305,22 @@
               case AUDIO:
                   if ($packetTS >= $pAudioTS)
                     {
-                      if ($noFrameSkip or $initialAP or (!$firstAP and ($packetSize > 8)))
+                      $FrameInfo = ReadByte($frag, $fragPos + $tagHeaderLen);
+                      $CodecID   = ($FrameInfo & 0xF0) >> 4;
+                      if ($CodecID == CODEC_ID_AAC)
                         {
-                          if (!$noFrameSkip and (($packetTS > 0) and ($packetTS == $pAudioTS)))
+                          $AAC_PacketType = ReadByte($frag, $fragPos + $tagHeaderLen + 1);
+                          if (($AAC_PacketType == AAC_SEQUENCE_HEADER) and $AAC_HeaderWritten)
+                            {
+                              DebugLog("Skipping AAC sequence header\nAUDIO\t$packetTS\t$pAudioTS\t$packetSize");
+                              break;
+                            }
+                          if (($AAC_PacketType == AAC_SEQUENCE_HEADER) and (!$AAC_HeaderWritten))
+                              $AAC_HeaderWritten = true;
+                        }
+                      if ($noFrameSkip or ($packetSize > 0))
+                        {
+                          if (!$noFrameSkip and (!$pAAC_Header) and ($packetTS == $pAudioTS))
                             {
                               if ($totalTagLen <= $pAudioTagLen)
                                 {
@@ -316,18 +335,18 @@
                               if ($pVideoTagPos > $pAudioTagPos)
                                   $pVideoTagPos -= $pAudioTagLen;
                             }
+                          if (($CodecID == CODEC_ID_AAC) and ($AAC_PacketType == AAC_SEQUENCE_HEADER))
+                              $pAAC_Header = true;
+                          else
+                              $pAAC_Header = false;
                           $pAudioTagPos = ftell($flv);
                           fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
-                          DebugLog("AUDIO\t$packetTS\t$pAudioTS\t$packetSize\t$pAudioTagPos\t1");
+                          DebugLog("AUDIO\t$packetTS\t$pAudioTS\t$packetSize\t$pAudioTagPos");
                           $pAudioTS     = $packetTS;
                           $pAudioTagLen = $totalTagLen;
                         }
                       else
                           DebugLog("Skipping small sized audio packet\nAUDIO\t$packetTS\t$pAudioTS\t$packetSize");
-                      if ($initialAP)
-                          $initialAP = false;
-                      if ($firstAP)
-                          $firstAP = false;
                     }
                   else
                       DebugLog("Skipping audio packet in fragment $i\nAUDIO\t$packetTS\t$pAudioTS\t$packetSize");
@@ -335,9 +354,28 @@
               case VIDEO:
                   if ($packetTS >= $pVideoTS)
                     {
-                      if ($noFrameSkip or $initialVP or (!$firstVP and ($packetSize > 0)))
+                      $FrameInfo = ReadByte($frag, $fragPos + $tagHeaderLen);
+                      $FrameType = ($FrameInfo & 0xF0) >> 4;
+                      $CodecID   = $FrameInfo & 0x0F;
+                      if ($FrameType == FRAME_TYPE_INFO)
                         {
-                          if (!$noFrameSkip and (($packetTS > 0) and ($packetTS == $pVideoTS)))
+                          DebugLog("Skipping video info frame\nVIDEO\t$packetTS\t$pVideoTS\t$packetSize");
+                          break;
+                        }
+                      if ($CodecID == CODEC_ID_AVC)
+                        {
+                          $AVC_PacketType = ReadByte($frag, $fragPos + $tagHeaderLen + 1);
+                          if (($AVC_PacketType == AVC_SEQUENCE_HEADER) and $AVC_HeaderWritten)
+                            {
+                              DebugLog("Skipping AVC sequence header\nVIDEO\t$packetTS\t$pVideoTS\t$packetSize");
+                              break;
+                            }
+                          if (($AVC_PacketType == AVC_SEQUENCE_HEADER) and (!$AVC_HeaderWritten))
+                              $AVC_HeaderWritten = true;
+                        }
+                      if ($noFrameSkip or ($packetSize > 0))
+                        {
+                          if (!$noFrameSkip and (!$pAVC_Header) and ($packetTS == $pVideoTS))
                             {
                               if ($totalTagLen <= $pVideoTagLen)
                                 {
@@ -352,23 +390,23 @@
                               if ($pAudioTagPos > $pVideoTagPos)
                                   $pAudioTagPos -= $pVideoTagLen;
                             }
+                          if (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType == AVC_SEQUENCE_HEADER))
+                              $pAVC_Header = true;
+                          else
+                              $pAVC_Header = false;
                           $pVideoTagPos = ftell($flv);
                           fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
-                          DebugLog("VIDEO\t$packetTS\t$pVideoTS\t$packetSize\t$pVideoTagPos\t1");
+                          DebugLog("VIDEO\t$packetTS\t$pVideoTS\t$packetSize\t$pVideoTagPos");
                           $pVideoTS     = $packetTS;
                           $pVideoTagLen = $totalTagLen;
                         }
                       else
                           DebugLog("Skipping small sized video packet\nVIDEO\t$packetTS\t$pVideoTS\t$packetSize");
-                      if ($initialVP)
-                          $initialVP = false;
-                      if ($firstVP)
-                          $firstVP = false;
                     }
                   else
                       DebugLog("Skipping video packet in fragment $i\nVIDEO\t$packetTS\t$pVideoTS\t$packetSize");
                   break;
-              case DATA:
+              case SCRIPT_DATA:
                   break;
           }
           $fragPos += $totalTagLen;
@@ -377,5 +415,8 @@
     }
 
   fclose($flv);
-  echo "\nFinished\n";
+  $timeEnd   = microtime(true);
+  $timeTaken = sprintf("%.2f", $timeEnd - $timeStart);
+  echo "Joined $fragCount fragments in $timeTaken seconds\n";
+  echo "Finished\n";
 ?>
