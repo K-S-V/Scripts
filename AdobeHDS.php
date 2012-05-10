@@ -183,30 +183,32 @@
           fwrite(STDERR, $msg . "\n");
     }
 
-  function RenameFragments($baseFilename)
+  function RenameFragments($baseFilename, $fileExt)
     {
       $files     = array();
       $fragCount = 0;
       $retries   = 0;
 
+      if (!file_exists($baseFilename . ($fragCount + 1) . $fileExt))
+          $fileExt = "";
       while (true)
         {
           if ($retries >= 50)
               break;
-          if (file_exists($baseFilename . ($fragCount + 1)))
+          $file = $baseFilename . ++$fragCount . $fileExt;
+          if (file_exists($file))
             {
-              $files[] = $baseFilename . ($fragCount + 1);
+              $files[] = $file;
               $retries = 0;
             }
           else
-              $retries += 1;
-          $fragCount += 1;
+              $retries++;
         }
 
       $fragCount = count($files);
       natsort($files);
       for ($i = 0; $i < $fragCount; $i++)
-          rename($files[$i], $baseFilename . ($i + 1));
+          rename($files[$i], $baseFilename . ($i + 1) . $fileExt);
     }
 
   ShowHeader("KSV Adobe HDS Downloader");
@@ -238,7 +240,7 @@
   if ($cli->getParam('no-frameskip'))
       $noFrameSkip = true;
   if ($cli->getParam('rename'))
-      RenameFragments($baseFilename);
+      RenameFragments($baseFilename, $fileExt);
 
   $baseFilename != "" ? $outputFile = "$baseFilename.flv" : $outputFile = "Joined.flv";
   while (true)
