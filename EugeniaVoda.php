@@ -8,13 +8,13 @@
     }
 
   ShowHeader("KSV EugeniaVoda Downloader");
-  $format = "%-7s : %s\n";
+  $format = "%-8s : ";
 
   if ($argc <= 2)
     {
-      echo "Enter URL : ";
+      printf($format, "URL");
       $url = trim(fgets(STDIN));
-      echo "Enter Filename : ";
+      printf($format, "Filename");
       $filename = trim(fgets(STDIN));
     }
   else
@@ -29,11 +29,11 @@
   if (!$chunks)
       die("Failed to decode json");
   $fh = fopen($filename, 'wb');
-  fwrite($fh, "\x46\x4C\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00");
+  fwrite($fh, pack("H*", "464C5601050000000900000000"));
   $total_chunks = count($chunks);
   for ($i = 0; $i < $total_chunks; $i++)
     {
-      echo "Downloading " . ($i + 1) . " of $total_chunks chunks\r";
+      echo "Downloaded " . ($i + 1) . "/$total_chunks chunks\r";
       $data = file_get_contents($url . "/$chunks[$i].flvtags");
       fwrite($fh, $data);
     }
