@@ -33,7 +33,7 @@
   $total_chunks = count($chunks);
   for ($i = 0; $i < $total_chunks; $i++)
     {
-      echo "Downloaded " . ($i + 1) . "/$total_chunks chunks\r";
+      echo "Downloading " . ($i + 1) . "/$total_chunks chunks\r";
       $data = file_get_contents($url . "/$chunks[$i].flvtags");
       fwrite($fh, $data);
     }

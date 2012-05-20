@@ -317,11 +317,15 @@
                               DebugLog("Skipping AAC sequence header\nAUDIO\t$packetTS\t$pAudioTS\t$packetSize");
                               break;
                             }
-                          if (($AAC_PacketType == AAC_SEQUENCE_HEADER) and (!$AAC_HeaderWritten))
+                          else
+                            {
                               $AAC_HeaderWritten = true;
+                              $pAAC_Header       = true;
+                            }
                         }
                       if ($noFrameSkip or ($packetSize > 0))
                         {
+                          // Check for packets with monotonic timestamps and presereve the large data packet
                           if (!$noFrameSkip and (!$pAAC_Header) and ($packetTS == $pAudioTS))
                             {
                               if ($totalTagLen <= $pAudioTagLen)
@@ -337,9 +341,7 @@
                               if ($pVideoTagPos > $pAudioTagPos)
                                   $pVideoTagPos -= $pAudioTagLen;
                             }
-                          if (($CodecID == CODEC_ID_AAC) and ($AAC_PacketType == AAC_SEQUENCE_HEADER))
-                              $pAAC_Header = true;
-                          else
+                          if (($CodecID == CODEC_ID_AAC) and ($AAC_PacketType != AAC_SEQUENCE_HEADER))
                               $pAAC_Header = false;
                           $pAudioTagPos = ftell($flv);
                           fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
@@ -372,11 +374,15 @@
                               DebugLog("Skipping AVC sequence header\nVIDEO\t$packetTS\t$pVideoTS\t$packetSize");
                               break;
                             }
-                          if (($AVC_PacketType == AVC_SEQUENCE_HEADER) and (!$AVC_HeaderWritten))
+                          else
+                            {
                               $AVC_HeaderWritten = true;
+                              $pAVC_Header       = true;
+                            }
                         }
                       if ($noFrameSkip or ($packetSize > 0))
                         {
+                          // Check for packets with monotonic timestamps and presereve the large data packet
                           if (!$noFrameSkip and (!$pAVC_Header) and ($packetTS == $pVideoTS))
                             {
                               if ($totalTagLen <= $pVideoTagLen)
@@ -392,9 +398,7 @@
                               if ($pAudioTagPos > $pVideoTagPos)
                                   $pAudioTagPos -= $pVideoTagLen;
                             }
-                          if (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType == AVC_SEQUENCE_HEADER))
-                              $pAVC_Header = true;
-                          else
+                          if (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType != AVC_SEQUENCE_HEADER))
                               $pAVC_Header = false;
                           $pVideoTagPos = ftell($flv);
                           fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
