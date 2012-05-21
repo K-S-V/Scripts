@@ -378,7 +378,10 @@
             {
               $discontinuity = value_array_field($i, "firstFragment", "discontinuityIndicator", $fragTable, true);
               if (($discontinuity == 1) or ($discontinuity == 3))
+                {
+                  $rename = true;
                   continue;
+                }
             }
           if (!file_exists("$baseFilename$i"))
             {
