@@ -18,7 +18,8 @@
               'rename'       => 'rename fragments sequentially before processing'
           ),
           1 => array(
-              'fragments' => 'base filename for fragments'
+              'fragments' => 'base filename for fragments',
+              'manifest'  => 'manifest file for downloading of fragments'
           )
       );
       var $params = array();
@@ -130,7 +131,7 @@
       return $int32[1];
     }
 
-  function ReadString(&$frag, &$fragPos)
+  function ReadString($frag, &$fragPos)
     {
       $strlen = 0;
       while ($frag[$fragPos] != 0x00)
@@ -140,7 +141,7 @@
       return $str;
     }
 
-  function ReadBoxHeader(&$frag, &$fragPos, &$boxType, &$boxSize)
+  function ReadBoxHeader($frag, &$fragPos, &$boxType, &$boxSize)
     {
       $boxSize = ReadInt32($frag, $fragPos);
       $boxType = substr($frag, $fragPos + 4, 4);
@@ -211,15 +212,196 @@
           rename($files[$i], $baseFilename . ($i + 1) . $fileExt);
     }
 
+  function in_array_field($needle, $needle_field, $haystack, $strict = false)
+    {
+      if ($strict)
+        {
+          foreach ($haystack as $item)
+              if (isset($item[$needle_field]) && $item[$needle_field] === $needle)
+                  return true;
+        }
+      else
+        {
+          foreach ($haystack as $item)
+              if (isset($item[$needle_field]) && $item[$needle_field] == $needle)
+                  return true;
+        }
+      return false;
+    }
+
+  function value_array_field($needle, $needle_field, $value_field, $haystack, $strict = false)
+    {
+      if ($strict)
+        {
+          foreach ($haystack as $item)
+              if (isset($item[$needle_field]) && $item[$needle_field] === $needle)
+                  return $item[$value_field];
+        }
+      else
+        {
+          foreach ($haystack as $item)
+              if (isset($item[$needle_field]) && $item[$needle_field] == $needle)
+                  return $item[$value_field];
+        }
+      return false;
+    }
+
+  function ParseBootstrapBox($bootstrapInfo, $pos)
+    {
+      $version             = ReadByte($bootstrapInfo, $pos);
+      $flags               = ReadInt24($bootstrapInfo, $pos + 1);
+      $bootstrapVersion    = ReadInt32($bootstrapInfo, $pos + 4);
+      $byte                = ReadByte($bootstrapInfo, $pos + 8);
+      $profile             = ($byte & 0xC0) >> 6;
+      $live                = ($byte & 0x20) >> 5;
+      $update              = ($byte & 0x10) >> 4;
+      $timescale           = ReadInt32($bootstrapInfo, $pos + 9);
+      $currentMediaTime    = ReadInt32($bootstrapInfo, 17);
+      $smpteTimeCodeOffset = ReadInt32($bootstrapInfo, 25);
+      $pos += 29;
+      $movieIdentifier  = ReadString($bootstrapInfo, $pos);
+      $serverEntryCount = ReadByte($bootstrapInfo, $pos++);
+      for ($i = 0; $i < $serverEntryCount; $i++)
+          $serverEntryTable[$i] = ReadString($bootstrapInfo, $pos);
+      $qualityEntryCount = ReadByte($bootstrapInfo, $pos++);
+      for ($i = 0; $i < $qualityEntryCount; $i++)
+          $qualityEntryTable[$i] = ReadString($bootstrapInfo, $pos);
+      $drmData              = ReadString($bootstrapInfo, $pos);
+      $metadata             = ReadString($bootstrapInfo, $pos);
+      $segmentRunTableCount = ReadByte($bootstrapInfo, $pos++);
+      for ($i = 0; $i < $segmentRunTableCount; $i++)
+        {
+          ReadBoxHeader($bootstrapInfo, $pos, $boxType, $boxSize);
+          if ($boxType == "asrt")
+              ParseAsrtBox($bootstrapInfo, $pos);
+          $pos += $boxSize;
+        }
+      $fragmentRunTableCount = ReadByte($bootstrapInfo, $pos++);
+      for ($i = 0; $i < $fragmentRunTableCount; $i++)
+        {
+          ReadBoxHeader($bootstrapInfo, $pos, $boxType, $boxSize);
+          if ($boxType == "afrt")
+              ParseAfrtBox($bootstrapInfo, $pos);
+          $pos += $boxSize;
+        }
+    }
+
+  function ParseAsrtBox($asrt, $pos)
+    {
+      global $fragCount;
+      $version           = ReadByte($asrt, $pos);
+      $flags             = ReadInt24($asrt, $pos + 1);
+      $qualityEntryCount = ReadByte($asrt, $pos + 4);
+      $pos += 5;
+      for ($i = 0; $i < $qualityEntryCount; $i++)
+        {
+          $qualitySegmentUrlModifiers[$i] = ReadString($asrt, $pos);
+        }
+      $segCount = ReadInt32($asrt, $pos);
+      $pos += 4;
+      DebugLog("Segment Entries:\n\nNumber\tFragments");
+      for ($i = 0; $i < $segCount; $i++)
+        {
+          $segTable[$i]['firstSegment']        = ReadInt32($asrt, $pos);
+          $segTable[$i]['fragmentsPerSegment'] = ReadInt32($asrt, $pos + 4);
+          $pos += 8;
+          DebugLog($segTable[$i]['firstSegment'] . "\t" . $segTable[$i]['fragmentsPerSegment']);
+        }
+      DebugLog("");
+      $fragCount = $segTable[0]['fragmentsPerSegment'];
+    }
+
+  function ParseAfrtBox($afrt, $pos)
+    {
+      global $fragTable;
+      $version           = ReadByte($afrt, $pos);
+      $flags             = ReadInt24($afrt, $pos + 1);
+      $timescale         = ReadInt32($afrt, $pos + 4);
+      $qualityEntryCount = ReadByte($afrt, $pos + 8);
+      $pos += 9;
+      for ($i = 0; $i < $qualityEntryCount; $i++)
+        {
+          $qualitySegmentUrlModifiers[$i] = ReadString($afrt, $pos);
+        }
+      $fragCount = ReadInt32($afrt, $pos);
+      $pos += 4;
+      DebugLog("Fragment Entries:\n\nNumber\tTimestamp\tDuration\tDiscontinuity");
+      for ($i = 0; $i < $fragCount; $i++)
+        {
+          $fragTable[$i]['firstFragment']          = ReadInt32($afrt, $pos);
+          $fragTable[$i]['firstFragmentTimestamp'] = ReadInt32($afrt, $pos + 8);
+          $fragTable[$i]['fragmentDuration']       = ReadInt32($afrt, $pos + 12);
+          $fragTable[$i]['discontinuityIndicator'] = "";
+          $pos += 16;
+          if ($fragTable[$i]['fragmentDuration'] == 0)
+              $fragTable[$i]['discontinuityIndicator'] = ReadByte($afrt, $pos++);
+          DebugLog($fragTable[$i]['firstFragment'] . "\t" . $fragTable[$i]['firstFragmentTimestamp'] . "\t\t" . $fragTable[$i]['fragmentDuration'] . "\t\t" . $fragTable[$i]['discontinuityIndicator']);
+        }
+      DebugLog("");
+    }
+
+  function ParseManifest($manifest)
+    {
+      global $media;
+      $xml = simplexml_load_file($manifest);
+      $xml->registerXPathNamespace("ns", "http://ns.adobe.com/f4m/1.0");
+      $streams = $xml->xpath("/ns:manifest/ns:media");
+      foreach ($streams as $stream)
+        {
+          $bitrate                          = (int) $stream['bitrate'];
+          $bootstrap                        = $xml->xpath("/ns:manifest/ns:bootstrapInfo[@id='" . $stream['bootstrapInfoId'] . "']");
+          $metadata                         = $xml->xpath("/ns:manifest/ns:media[@bitrate=" . $bitrate . "]/ns:metadata");
+          $media[$bitrate]['bootstrapInfo'] = trim((string) $bootstrap[0]);
+          $media[$bitrate]['metadata']      = trim((string) $metadata[0]);
+          $media[$bitrate]['url']           = trim((string) $stream['url']);
+        }
+      krsort($media, SORT_NUMERIC);
+      $media         = $media[key($media)];
+      $bootstrapInfo = base64_decode($media['bootstrapInfo']);
+      ReadBoxHeader($bootstrapInfo, $pos, $boxType, $boxSize);
+      if ($boxType == "abst")
+          ParseBootstrapBox($bootstrapInfo, $pos);
+      else
+          die("Failed to parse bootstrap info");
+    }
+
+  function DownloadFragments($manifest)
+    {
+      global $baseFilename, $fragCount, $fragTable, $media, $rename;
+      ParseManifest($manifest);
+      $baseUrl      = substr($manifest, 0, strrpos($manifest, '/'));
+      $baseFilename = $media['url'] . "Seg1-Frag";
+      for ($i = 1; $i <= $fragCount; $i++)
+        {
+          echo "Downloading fragment $i/$fragCount\r";
+          if (in_array_field($i, "firstFragment", $fragTable, true))
+            {
+              $discontinuity = value_array_field($i, "firstFragment", "discontinuityIndicator", $fragTable, true);
+              if (($discontinuity == 1) or ($discontinuity == 3))
+                  continue;
+            }
+          if (!file_exists("$baseFilename$i"))
+            {
+              $data = @file_get_contents("$baseUrl/$baseFilename$i");
+              if ($data != false)
+                  file_put_contents("$baseFilename$i", $data);
+              else
+                  $rename = true;
+            }
+        }
+      echo "\n";
+    }
+
   ShowHeader("KSV Adobe HDS Downloader");
   $flvHeader    = pack("H*", "464c5601050000000900000000");
+  $format       = "%s\t%s\t\t%s\t\t%s";
   $baseFilename = "";
   $debug        = false;
   $fileExt      = ".f4f";
   $tagHeaderLen = 11;
   $prevTagSize  = 4;
-  $fragCount    = 0;
   $noFrameSkip  = false;
+  $rename       = false;
   $pAudioTS     = -1;
   $pVideoTS     = -1;
   $pAudioTagPos = 0;
@@ -239,9 +421,12 @@
       $debug = true;
   if ($cli->getParam('no-frameskip'))
       $noFrameSkip = true;
-  if ($cli->getParam('rename'))
+  if ($cli->getParam('manifest'))
+      DownloadFragments($cli->getParam('manifest'));
+  if ($cli->getParam('rename') or $rename)
       RenameFragments($baseFilename, $fileExt);
 
+  $fragCount = 0;
   $baseFilename != "" ? $outputFile = "$baseFilename.flv" : $outputFile = "Joined.flv";
   while (true)
     {
@@ -296,6 +481,7 @@
           continue;
         }
 
+      DebugLog(sprintf("%s\t%s\t%s\t%s\t\t%s", "Type", "CurrentTS", "PreviousTS", "Size", "Position"));
       while ($fragPos < $fragLen)
         {
           $packetType  = ReadByte($frag, $fragPos);
@@ -314,7 +500,7 @@
                           $AAC_PacketType = ReadByte($frag, $fragPos + $tagHeaderLen + 1);
                           if (($AAC_PacketType == AAC_SEQUENCE_HEADER) and $AAC_HeaderWritten)
                             {
-                              DebugLog("Skipping AAC sequence header\nAUDIO\t$packetTS\t$pAudioTS\t$packetSize");
+                              DebugLog(sprintf($format, "Skipping AAC sequence header\nAUDIO", $packetTS, $pAudioTS, $packetSize));
                               break;
                             }
                           else
@@ -325,12 +511,12 @@
                         }
                       if ($noFrameSkip or ($packetSize > 0))
                         {
-                          // Check for packets with monotonic timestamps and presereve the large data packet
+                          // Check for packets with monotonic timestamps and presereve the larger audio packet
                           if (!$noFrameSkip and (!$pAAC_Header) and ($packetTS == $pAudioTS))
                             {
                               if ($totalTagLen <= $pAudioTagLen)
                                 {
-                                  DebugLog("Skipping overwrite of audio packet\nAUDIO\t$packetTS\t$pAudioTS\t$packetSize");
+                                  DebugLog(sprintf($format, "Skipping overwrite of audio packet\nAUDIO", $packetTS, $pAudioTS, $packetSize));
                                   break;
                                 }
                               fseek($flv, $pAudioTagPos + $pAudioTagLen, SEEK_SET);
@@ -345,15 +531,15 @@
                               $pAAC_Header = false;
                           $pAudioTagPos = ftell($flv);
                           fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
-                          DebugLog("AUDIO\t$packetTS\t$pAudioTS\t$packetSize\t$pAudioTagPos");
+                          DebugLog(sprintf($format, "AUDIO", $packetTS, $pAudioTS, $packetSize . "\t\t" . $pAudioTagPos));
                           $pAudioTS     = $packetTS;
                           $pAudioTagLen = $totalTagLen;
                         }
                       else
-                          DebugLog("Skipping small sized audio packet\nAUDIO\t$packetTS\t$pAudioTS\t$packetSize");
+                          DebugLog(sprintf($format, "Skipping small sized audio packet\nAUDIO", $packetTS, $pAudioTS, $packetSize));
                     }
                   else
-                      DebugLog("Skipping audio packet in fragment $i\nAUDIO\t$packetTS\t$pAudioTS\t$packetSize");
+                      DebugLog(sprintf($format, "Skipping audio packet in fragment $i\nAUDIO", $packetTS, $pAudioTS, $packetSize));
                   break;
               case VIDEO:
                   if ($packetTS >= $pVideoTS)
@@ -363,7 +549,7 @@
                       $CodecID   = $FrameInfo & 0x0F;
                       if ($FrameType == FRAME_TYPE_INFO)
                         {
-                          DebugLog("Skipping video info frame\nVIDEO\t$packetTS\t$pVideoTS\t$packetSize");
+                          DebugLog(sprintf($format, "Skipping video info frame\nVIDEO", $packetTS, $pVideoTS, $packetSize));
                           break;
                         }
                       if ($CodecID == CODEC_ID_AVC)
@@ -371,7 +557,7 @@
                           $AVC_PacketType = ReadByte($frag, $fragPos + $tagHeaderLen + 1);
                           if (($AVC_PacketType == AVC_SEQUENCE_HEADER) and $AVC_HeaderWritten)
                             {
-                              DebugLog("Skipping AVC sequence header\nVIDEO\t$packetTS\t$pVideoTS\t$packetSize");
+                              DebugLog(sprintf($format, "Skipping AVC sequence header\nVIDEO", $packetTS, $pVideoTS, $packetSize));
                               break;
                             }
                           else
@@ -382,12 +568,12 @@
                         }
                       if ($noFrameSkip or ($packetSize > 0))
                         {
-                          // Check for packets with monotonic timestamps and presereve the large data packet
+                          // Check for packets with monotonic timestamps and presereve the larger video packet
                           if (!$noFrameSkip and (!$pAVC_Header) and ($packetTS == $pVideoTS))
                             {
                               if ($totalTagLen <= $pVideoTagLen)
                                 {
-                                  DebugLog("Skipping overwrite of video packet\nVIDEO\t$packetTS\t$pVideoTS\t$packetSize");
+                                  DebugLog(sprintf($format, "Skipping overwrite of video packet\nVIDEO", $packetTS, $pVideoTS, $packetSize));
                                   break;
                                 }
                               fseek($flv, $pVideoTagPos + $pVideoTagLen, SEEK_SET);
@@ -402,15 +588,15 @@
                               $pAVC_Header = false;
                           $pVideoTagPos = ftell($flv);
                           fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
-                          DebugLog("VIDEO\t$packetTS\t$pVideoTS\t$packetSize\t$pVideoTagPos");
+                          DebugLog(sprintf($format, "VIDEO", $packetTS, $pVideoTS, $packetSize . "\t\t" . $pVideoTagPos));
                           $pVideoTS     = $packetTS;
                           $pVideoTagLen = $totalTagLen;
                         }
                       else
-                          DebugLog("Skipping small sized video packet\nVIDEO\t$packetTS\t$pVideoTS\t$packetSize");
+                          DebugLog(sprintf($format, "Skipping small sized video packet\nVIDEO", $packetTS, $pVideoTS, $packetSize));
                     }
                   else
-                      DebugLog("Skipping video packet in fragment $i\nVIDEO\t$packetTS\t$pVideoTS\t$packetSize");
+                      DebugLog(sprintf($format, "Skipping video packet in fragment $i\nVIDEO", $packetTS, $pVideoTS, $packetSize));
                   break;
               case SCRIPT_DATA:
                   break;
