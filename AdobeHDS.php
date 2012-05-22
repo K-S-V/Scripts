@@ -14,6 +14,7 @@
           0 => array(
               'help'         => 'displays this help',
               'debug'        => 'show debug ouput',
+              'delete'       => 'delete fragments after processing',
               'no-frameskip' => 'do not filter any frames',
               'rename'       => 'rename fragments sequentially before processing'
           ),
@@ -434,6 +435,7 @@
   $format       = "%s\t%s\t\t%s\t\t%s";
   $baseFilename = "";
   $debug        = false;
+  $delete       = false;
   $fileExt      = ".f4f";
   $noFrameSkip  = false;
   $quality      = "high";
@@ -457,6 +459,8 @@
       $baseFilename = $cli->getParam('fragments');
   if ($cli->getParam('debug'))
       $debug = true;
+  if ($cli->getParam('delete'))
+      $delete = true;
   if ($cli->getParam('no-frameskip'))
       $noFrameSkip = true;
   if ($cli->getParam('quality'))
@@ -470,9 +474,9 @@
   $baseFilename != "" ? $outputFile = "$baseFilename.flv" : $outputFile = "Joined.flv";
   while (true)
     {
-      if (file_exists("$baseFilename" . ($fragCount + 1) . $fileExt))
+      if (file_exists($baseFilename . ($fragCount + 1) . $fileExt))
           $fragCount++;
-      else if (file_exists("$baseFilename" . ($fragCount + 1)))
+      else if (file_exists($baseFilename . ($fragCount + 1)))
         {
           $fileExt = "";
           $fragCount++;
@@ -500,7 +504,7 @@
       $fragPos = 0;
       $mdat    = false;
 
-      $frag    = file_get_contents("$baseFilename" . $i . $fileExt);
+      $frag    = file_get_contents($baseFilename . $i . $fileExt);
       $fragLen = strlen($frag);
       while (!$mdat and ($fragPos < $fragLen))
         {
@@ -650,5 +654,12 @@
   $timeEnd   = microtime(true);
   $timeTaken = sprintf("%.2f", $timeEnd - $timeStart);
   echo "Joined $fragCount fragments in $timeTaken seconds\n";
+
+  if ($delete)
+      for ($i = 1; $i <= $fragCount; $i++)
+        {
+          if (file_exists($baseFilename . $i . $fileExt))
+              unlink($baseFilename . $i . $fileExt);
+        }
   echo "Finished\n";
 ?>
