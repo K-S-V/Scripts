@@ -19,7 +19,8 @@
           ),
           1 => array(
               'fragments' => 'base filename for fragments',
-              'manifest'  => 'manifest file for downloading of fragments'
+              'manifest'  => 'manifest file for downloading of fragments',
+              'quality'   => 'selected quality level (low|medium|high) or exact bitrate'
           )
       );
       var $params = array();
@@ -113,6 +114,12 @@
       $width  = (int) ((80 - $len) / 2) + $len;
       $format = "\n%" . $width . "s\n\n";
       printf($format, $headers);
+    }
+
+  function KeyName(array $a, $pos)
+    {
+      $temp = array_slice($a, $pos, 1, true);
+      return key($temp);
     }
 
   function ReadByte($str, $pos)
@@ -342,22 +349,49 @@
 
   function ParseManifest($manifest)
     {
-      global $media;
+      global $media, $quality;
       $xml = simplexml_load_file($manifest);
       $xml->registerXPathNamespace("ns", "http://ns.adobe.com/f4m/1.0");
       $streams = $xml->xpath("/ns:manifest/ns:media");
       foreach ($streams as $stream)
         {
-          $bitrate                          = (int) $stream['bitrate'];
-          $bootstrap                        = $xml->xpath("/ns:manifest/ns:bootstrapInfo[@id='" . $stream['bootstrapInfoId'] . "']");
-          $metadata                         = $xml->xpath("/ns:manifest/ns:media[@bitrate=" . $bitrate . "]/ns:metadata");
-          $media[$bitrate]['bootstrapInfo'] = trim((string) $bootstrap[0]);
-          $media[$bitrate]['metadata']      = trim((string) $metadata[0]);
-          $media[$bitrate]['url']           = trim((string) $stream['url']);
+          $bitrate   = (int) $stream['bitrate'];
+          $bootstrap = $xml->xpath("/ns:manifest/ns:bootstrapInfo[@id='" . $stream['bootstrapInfoId'] . "']");
+          $metadata  = $xml->xpath("/ns:manifest/ns:media[@bitrate=" . $bitrate . "]/ns:metadata");
+          if (isset($metadata[0]))
+              $media[$bitrate]['metadata'] = trim((string) $metadata[0]);
+          else
+              $media[$bitrate]['metadata'] = "";
+          $media[$bitrate]['bootstrap'] = trim((string) $bootstrap[0]);
+          $media[$bitrate]['url']       = trim((string) $stream['url']);
         }
+
       krsort($media, SORT_NUMERIC);
-      $media         = $media[key($media)];
-      $bootstrapInfo = base64_decode($media['bootstrapInfo']);
+      if (is_numeric($quality))
+          $media = $media[$quality];
+      else
+        {
+          $quality = strtolower($quality);
+          if ($quality == "high")
+              $quality = 0;
+          else if ($quality == "medium")
+              $quality = 1;
+          else if ($quality == "low")
+              $quality = 2;
+          while (true)
+            {
+              $key = KeyName($media, $quality);
+              if ($key)
+                {
+                  $media = $media[$key];
+                  break;
+                }
+              else
+                  $quality -= 1;
+            }
+        }
+
+      $bootstrapInfo = base64_decode($media['bootstrap']);
       ReadBoxHeader($bootstrapInfo, $pos, $boxType, $boxSize);
       if ($boxType == "abst")
           ParseBootstrapBox($bootstrapInfo, $pos);
@@ -401,10 +435,11 @@
   $baseFilename = "";
   $debug        = false;
   $fileExt      = ".f4f";
-  $tagHeaderLen = 11;
-  $prevTagSize  = 4;
   $noFrameSkip  = false;
+  $quality      = "high";
   $rename       = false;
+  $prevTagSize  = 4;
+  $tagHeaderLen = 11;
   $pAudioTS     = -1;
   $pVideoTS     = -1;
   $pAudioTagPos = 0;
@@ -424,6 +459,8 @@
       $debug = true;
   if ($cli->getParam('no-frameskip'))
       $noFrameSkip = true;
+  if ($cli->getParam('quality'))
+      $quality = $cli->getParam('quality');
   if ($cli->getParam('manifest'))
       DownloadFragments($cli->getParam('manifest'));
   if ($cli->getParam('rename') or $rename)
