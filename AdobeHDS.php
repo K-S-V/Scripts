@@ -489,6 +489,18 @@
     {
       $flv = fopen("$outputFile", "w+b");
       fwrite($flv, $flvHeader, 13);
+      if ($media['metadata'])
+        {
+          $media['metadata'] = base64_decode($media['metadata']);
+          $metadataSize      = strlen($media['metadata']);
+          WriteByte($metadata, 0, SCRIPT_DATA);
+          WriteInt24($metadata, 1, $metadataSize);
+          WriteInt24($metadata, 4, 0);
+          WriteInt32($metadata, 7, 0);
+          $metadata = implode("", $metadata) . $media['metadata'];
+          WriteInt32($metadata, $tagHeaderLen + $metadataSize, $tagHeaderLen + $metadataSize);
+          fwrite($flv, $metadata, $tagHeaderLen + $metadataSize + $prevTagSize);
+        }
     }
   else
       exit(1);
