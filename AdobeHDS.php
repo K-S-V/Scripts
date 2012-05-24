@@ -498,6 +498,7 @@
           WriteInt24($metadata, 4, 0);
           WriteInt32($metadata, 7, 0);
           $metadata = implode("", $metadata) . $media['metadata'];
+          WriteByte($metadata, $tagHeaderLen + $metadataSize - 1, 0x09);
           WriteInt32($metadata, $tagHeaderLen + $metadataSize, $tagHeaderLen + $metadataSize);
           fwrite($flv, $metadata, $tagHeaderLen + $metadataSize + $prevTagSize);
         }
