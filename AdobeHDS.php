@@ -1,3 +1,4 @@
+#!/bin/env php
 <?php
   define('AUDIO', 0x08);
   define('VIDEO', 0x09);
