@@ -479,7 +479,7 @@
           die("Access Denied! Unable to download manifest.");
       else if ($status != 200)
           die("Unable to download manifest");
-      $xml = simplexml_load_file($cc->response);
+      $xml = simplexml_load_string($cc->response);
       $xml->registerXPathNamespace("ns", "http://ns.adobe.com/f4m/1.0");
       $streams = $xml->xpath("/ns:manifest/ns:media");
       foreach ($streams as $stream)
