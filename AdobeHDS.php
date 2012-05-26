@@ -159,7 +159,7 @@
           if ($this->cookies == true)
               curl_setopt($process, CURLOPT_COOKIEJAR, $this->cookie_file);
           curl_setopt($process, CURLOPT_ENCODING, $this->compression);
-          curl_setopt($process, CURLOPT_TIMEOUT, 30);
+          curl_setopt($process, CURLOPT_TIMEOUT, 300);
           if ($this->proxy)
               $this->setProxy($process, $this->proxy);
           curl_setopt($process, CURLOPT_RETURNTRANSFER, 1);
