@@ -109,12 +109,13 @@
         }
     }
 
-  function ShowHeader($headers)
     {
-      $len    = strlen($headers);
+  function ShowHeader($header)
+    {
+      $len    = strlen($header);
       $width  = (int) ((80 - $len) / 2) + $len;
       $format = "\n%" . $width . "s\n\n";
-      printf($format, $headers);
+      printf($format, $header);
     }
 
   function KeyName(array $a, $pos)

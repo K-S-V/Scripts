@@ -27,12 +27,12 @@
       return $filename;
     }
 
-  function ShowHeader($headers)
+  function ShowHeader($header)
     {
-      $len    = strlen($headers);
+      $len    = strlen($header);
       $width  = (int) ((80 - $len) / 2) + $len;
       $format = "\n%" . $width . "s\n\n";
-      printf($format, $headers);
+      printf($format, $header);
     }
 
   ShowHeader("KSV Power106 Downloader");
