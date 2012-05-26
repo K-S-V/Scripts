@@ -19,6 +19,7 @@
               'rename'       => 'rename fragments sequentially before processing'
           ),
           1 => array(
+              'auth'      => 'authentication string for fragment requests',
               'fragments' => 'base filename for fragments',
               'manifest'  => 'manifest file for downloading of fragments',
               'quality'   => 'selected quality level (low|medium|high) or exact bitrate'
@@ -109,7 +110,128 @@
         }
     }
 
+  class cURL
     {
+      var $headers;
+      var $user_agent;
+      var $compression;
+      var $cookie_file;
+      var $proxy;
+      var $cert_check;
+      var $response;
+
+      function cURL($cookies = true, $cookie = 'Cookies.txt', $compression = 'gzip', $proxy = '')
+        {
+          $this->headers[]   = 'Accept: image/gif, image/x-bitmap, image/jpeg, image/pjpeg';
+          $this->headers[]   = 'Connection: Keep-Alive';
+          $this->headers[]   = 'Content-type: application/x-www-form-urlencoded;charset=UTF-8';
+          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:12.0) Gecko/20100101 Firefox/12.0';
+          $this->compression = $compression;
+          $this->proxy       = $proxy;
+          $this->cookies     = $cookies;
+          $this->cert_check  = true;
+          if ($this->cookies == true)
+              $this->cookie($cookie);
+        }
+
+      function cookie($cookie_file)
+        {
+          if (file_exists($cookie_file))
+            {
+              $this->cookie_file = $cookie_file;
+            }
+          else
+            {
+              $file = fopen($cookie_file, 'w') or $this->error('The cookie file could not be opened. Make sure this directory has the correct permissions');
+              $this->cookie_file = $cookie_file;
+              fclose($file);
+            }
+        }
+
+      function get($url)
+        {
+          $process = curl_init($url);
+          curl_setopt($process, CURLOPT_HTTPHEADER, $this->headers);
+          curl_setopt($process, CURLOPT_HEADER, 1);
+          curl_setopt($process, CURLOPT_USERAGENT, $this->user_agent);
+          if ($this->cookies == true)
+              curl_setopt($process, CURLOPT_COOKIEFILE, $this->cookie_file);
+          if ($this->cookies == true)
+              curl_setopt($process, CURLOPT_COOKIEJAR, $this->cookie_file);
+          curl_setopt($process, CURLOPT_ENCODING, $this->compression);
+          curl_setopt($process, CURLOPT_TIMEOUT, 30);
+          if ($this->proxy)
+              $this->setProxy($process, $this->proxy);
+          curl_setopt($process, CURLOPT_RETURNTRANSFER, 1);
+          curl_setopt($process, CURLOPT_FOLLOWLOCATION, 1);
+          if (!$this->cert_check)
+              curl_setopt($process, CURLOPT_SSL_VERIFYPEER, 0);
+          $return = curl_exec($process);
+          curl_close($process);
+          $return = explode("\r\n\r\n", $return, 2);
+          preg_match("/HTTP.*? (\d+)/i", $return[0], $status);
+          if (isset($status[1]))
+              $status = (int) $status[1];
+          else
+              $status = 0;
+          if (isset($return[1]))
+              $this->response = $return[1];
+          else
+              $this->response = "";
+          return $status;
+        }
+
+      function post($url, $data)
+        {
+          $process = curl_init($url);
+          curl_setopt($process, CURLOPT_HTTPHEADER, $this->headers);
+          curl_setopt($process, CURLOPT_HEADER, 1);
+          curl_setopt($process, CURLOPT_USERAGENT, $this->user_agent);
+          if ($this->cookies == true)
+              curl_setopt($process, CURLOPT_COOKIEFILE, $this->cookie_file);
+          if ($this->cookies == true)
+              curl_setopt($process, CURLOPT_COOKIEJAR, $this->cookie_file);
+          curl_setopt($process, CURLOPT_ENCODING, $this->compression);
+          curl_setopt($process, CURLOPT_TIMEOUT, 30);
+          if ($this->proxy)
+              $this->setProxy($process, $this->proxy);
+          curl_setopt($process, CURLOPT_POSTFIELDS, $data);
+          curl_setopt($process, CURLOPT_RETURNTRANSFER, 1);
+          curl_setopt($process, CURLOPT_FOLLOWLOCATION, 1);
+          curl_setopt($process, CURLOPT_POST, 1);
+          if (!$this->cert_check)
+              curl_setopt($process, CURLOPT_SSL_VERIFYPEER, 0);
+          $return = curl_exec($process);
+          curl_close($process);
+          return $return;
+        }
+
+      function setProxy(&$process, $proxy)
+        {
+          $type  = substr($proxy, 0, stripos($proxy, ":"));
+          $proxy = substr($proxy, stripos($proxy, "//") + 2);
+          switch ($type)
+          {
+              case "socks4":
+                  $type = CURLPROXY_SOCKS4;
+                  break;
+              case "socks5":
+                  $type = CURLPROXY_SOCKS5;
+                  break;
+              default:
+                  $type = CURLPROXY_HTTP;
+          }
+          curl_setopt($process, CURLOPT_PROXY, $this->proxy);
+          curl_setopt($process, CURLOPT_PROXYTYPE, $type);
+        }
+
+      function error($error)
+        {
+          echo "cURL Error : $error";
+          die;
+        }
+    }
+
   function ShowHeader($header)
     {
       $len    = strlen($header);
@@ -351,8 +473,13 @@
 
   function ParseManifest($manifest)
     {
-      global $media, $quality;
-      $xml = simplexml_load_file($manifest);
+      global $cc, $media, $quality;
+      $status = $cc->get($manifest);
+      if ($status == 403)
+          die("Access Denied! Unable to download manifest.");
+      else if ($status != 200)
+          die("Unable to download manifest");
+      $xml = simplexml_load_file($cc->response);
       $xml->registerXPathNamespace("ns", "http://ns.adobe.com/f4m/1.0");
       $streams = $xml->xpath("/ns:manifest/ns:media");
       foreach ($streams as $stream)
@@ -401,9 +528,30 @@
           die("Failed to parse bootstrap info");
     }
 
+  function VerifyFragment($frag)
+    {
+      $fragPos = 0;
+      $fragLen = strlen($frag);
+      while ($fragPos < $fragLen)
+        {
+          ReadBoxHeader($frag, $fragPos, $boxType, $boxSize);
+          if ($boxType == "mdat")
+            {
+              $frag    = substr($frag, $fragPos, $boxSize);
+              $fragLen = strlen($frag);
+              if ($fragLen == $boxSize)
+                  return true;
+              else
+                  return false;
+            }
+          $fragPos += $boxSize;
+        }
+      return false;
+    }
+
   function DownloadFragments($manifest)
     {
-      global $baseFilename, $fragCount, $fragTable, $media, $rename;
+      global $auth, $baseFilename, $cc, $fragCount, $fragTable, $media, $rename;
       ParseManifest($manifest);
       $baseUrl      = substr($manifest, 0, strrpos($manifest, '/'));
       $baseFilename = $media['url'] . "Seg1-Frag";
@@ -421,9 +569,18 @@
             }
           if (!file_exists("$baseFilename$i"))
             {
-              $data = @file_get_contents("$baseUrl/$baseFilename$i");
-              if ($data != false)
-                  file_put_contents("$baseFilename$i", $data);
+              $status = $cc->get("$baseUrl/$baseFilename$i" . $auth);
+              if ($status == 200)
+                {
+                  if (VerifyFragment($cc->response))
+                      file_put_contents("$baseFilename$i", $cc->response);
+                  else
+                      $i--;
+                }
+              else if ($status == 403)
+                  die("Access Denied! Unable to download fragments.");
+              else if ($status == 0)
+                  $i--;
               else
                   $rename = true;
             }
@@ -434,6 +591,7 @@
   ShowHeader("KSV Adobe HDS Downloader");
   $flvHeader    = pack("H*", "464c5601050000000900000000");
   $format       = "%s\t%s\t\t%s\t\t%s";
+  $auth         = "";
   $baseFilename = "";
   $debug        = false;
   $delete       = false;
@@ -450,6 +608,7 @@
   $pVideoTagPos = 0;
   $pVideoTagLen = 0;
 
+  $cc  = new cURL();
   $cli = new CLI();
   if ($cli->getParam('help'))
     {
@@ -458,6 +617,8 @@
     }
   if ($cli->getParam('fragments'))
       $baseFilename = $cli->getParam('fragments');
+  if ($cli->getParam('auth'))
+      $auth = "?" . $cli->getParam('auth');
   if ($cli->getParam('debug'))
       $debug = true;
   if ($cli->getParam('delete'))
@@ -520,13 +681,15 @@
 
       $frag    = file_get_contents($baseFilename . $i . $fileExt);
       $fragLen = strlen($frag);
-      while (!$mdat and ($fragPos < $fragLen))
+      while ($fragPos < $fragLen)
         {
           ReadBoxHeader($frag, $fragPos, $boxType, $boxSize);
           if ($boxType == "mdat")
             {
-              $mdat    = true;
               $frag    = substr($frag, $fragPos, $boxSize);
+              $fragLen = strlen($frag);
+              if ($fragLen == $boxSize)
+                  $mdat = true;
               $fragPos = 0;
               $fragLen = $boxSize;
               break;
