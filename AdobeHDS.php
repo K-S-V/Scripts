@@ -719,15 +719,24 @@
                       if ($CodecID == CODEC_ID_AAC)
                         {
                           $AAC_PacketType = ReadByte($frag, $fragPos + $tagHeaderLen + 1);
-                          if (($AAC_PacketType == AAC_SEQUENCE_HEADER) and $AAC_HeaderWritten)
+                          if ($AAC_PacketType == AAC_SEQUENCE_HEADER)
                             {
-                              DebugLog(sprintf($format, "Skipping AAC sequence header\nAUDIO", $packetTS, $prevAudioTS, $packetSize));
-                              break;
+                              if ($AAC_HeaderWritten)
+                                {
+                                  DebugLog(sprintf($format, "Skipping AAC sequence header\nAUDIO", $packetTS, $prevAudioTS, $packetSize));
+                                  break;
+                                }
+                              else
+                                {
+                                  DebugLog("Writing AAC sequence header");
+                                  $AAC_HeaderWritten = true;
+                                  $prevAAC_Header    = true;
+                                }
                             }
-                          else
+                          else if (!$AAC_HeaderWritten)
                             {
-                              $AAC_HeaderWritten = true;
-                              $prevAAC_Header    = true;
+                              DebugLog(sprintf($format, "Discarding audio packet before AAC sequence header\nAUDIO", $packetTS, $prevAudioTS, $packetSize));
+                              break;
                             }
                         }
                       if ($noFrameSkip or ($packetSize > 0))
@@ -776,15 +785,24 @@
                       if ($CodecID == CODEC_ID_AVC)
                         {
                           $AVC_PacketType = ReadByte($frag, $fragPos + $tagHeaderLen + 1);
-                          if (($AVC_PacketType == AVC_SEQUENCE_HEADER) and $AVC_HeaderWritten)
+                          if ($AVC_PacketType == AVC_SEQUENCE_HEADER)
                             {
-                              DebugLog(sprintf($format, "Skipping AVC sequence header\nVIDEO", $packetTS, $prevVideoTS, $packetSize));
-                              break;
+                              if ($AVC_HeaderWritten)
+                                {
+                                  DebugLog(sprintf($format, "Skipping AVC sequence header\nVIDEO", $packetTS, $prevVideoTS, $packetSize));
+                                  break;
+                                }
+                              else
+                                {
+                                  DebugLog("Writing AVC sequence header");
+                                  $AVC_HeaderWritten = true;
+                                  $prevAVC_Header    = true;
+                                }
                             }
-                          else
+                          else if (!$AVC_HeaderWritten)
                             {
-                              $AVC_HeaderWritten = true;
-                              $prevAVC_Header    = true;
+                              DebugLog(sprintf($format, "Discarding video packet before AVC sequence header\nVIDEO", $packetTS, $prevVideoTS, $packetSize));
+                              break;
                             }
                         }
                       if ($noFrameSkip or ($packetSize > 0))
