@@ -22,6 +22,7 @@
               'auth'      => 'authentication string for fragment requests',
               'fragments' => 'base filename for fragments',
               'manifest'  => 'manifest file for downloading of fragments',
+              'proxy'     => 'use proxy for downloading of fragments',
               'quality'   => 'selected quality level (low|medium|high) or exact bitrate'
           )
       );
@@ -106,7 +107,7 @@
           foreach (self::$ACCEPTED[0] as $key => $value)
               printf(" --%-18s%s\n", $key, $value);
           foreach (self::$ACCEPTED[1] as $key => $value)
-              printf(" --%-18s%s\n", $key . " [param]", $value);
+              printf(" --%-9s%-9s%s\n", $key, " [param]", $value);
         }
     }
 
@@ -555,6 +556,11 @@
       ParseManifest($manifest);
       $baseUrl      = substr($manifest, 0, strrpos($manifest, '/'));
       $baseFilename = $media['url'] . "Seg1-Frag";
+      if (strncasecmp($media['url'], "http", 4) == 0)
+        {
+          $baseUrl      = substr($media['url'], 0, strrpos($media['url'], '/'));
+          $baseFilename = substr($media['url'], strrpos($media['url'], '/') + 1) . "Seg1-Frag";
+        }
       for ($i = 1; $i <= $fragCount; $i++)
         {
           echo "Downloading fragment $i/$fragCount\r";
@@ -603,10 +609,10 @@
   $tagHeaderLen = 11;
   $prevAudioTS  = -1;
   $prevVideoTS  = -1;
-  $pAudioTagPos = 0;
   $pAudioTagLen = 0;
-  $pVideoTagPos = 0;
   $pVideoTagLen = 0;
+  $pAudioTagPos = 0;
+  $pVideoTagPos = 0;
 
   $cc  = new cURL();
   $cli = new CLI();
@@ -627,6 +633,8 @@
       $noFrameSkip = true;
   if ($cli->getParam('quality'))
       $quality = $cli->getParam('quality');
+  if ($cli->getParam('proxy'))
+      $cc->proxy = $cli->getParam('proxy');
   if ($cli->getParam('manifest'))
       DownloadFragments($cli->getParam('manifest'));
   if ($cli->getParam('rename') or $rename)
