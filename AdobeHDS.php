@@ -485,9 +485,10 @@
       $streams = $xml->xpath("/ns:manifest/ns:media");
       foreach ($streams as $stream)
         {
-          $bitrate   = (int) $stream['bitrate'];
+          $bitrate   = isset($stream['bitrate']) ? (int) $stream['bitrate'] : 1;
+          $streamId  = trim((string) $stream['streamId']);
           $bootstrap = $xml->xpath("/ns:manifest/ns:bootstrapInfo[@id='" . $stream['bootstrapInfoId'] . "']");
-          $metadata  = $xml->xpath("/ns:manifest/ns:media[@bitrate=" . $bitrate . "]/ns:metadata");
+          $metadata  = $xml->xpath("/ns:manifest/ns:media[@streamId='" . $streamId . "']/ns:metadata");
           if (isset($metadata[0]))
               $media[$bitrate]['metadata'] = trim((string) $metadata[0]);
           else
