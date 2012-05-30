@@ -555,12 +555,21 @@
     {
       global $auth, $baseFilename, $cc, $fragCount, $fragTable, $media, $rename;
       ParseManifest($manifest);
-      $baseUrl      = substr($manifest, 0, strrpos($manifest, '/'));
-      $baseFilename = $media['url'] . "Seg1-Frag";
       if (strncasecmp($media['url'], "http", 4) == 0)
         {
           $baseUrl      = substr($media['url'], 0, strrpos($media['url'], '/'));
           $baseFilename = substr($media['url'], strrpos($media['url'], '/') + 1) . "Seg1-Frag";
+        }
+      else
+        {
+          if (strpos($manifest, '?') !== false)
+            {
+              $baseUrl = substr($manifest, 0, strpos($manifest, '?'));
+              $baseUrl = substr($baseUrl, 0, strrpos($baseUrl, '/'));
+            }
+          else
+              $baseUrl = substr($manifest, 0, strrpos($manifest, '/'));
+          $baseFilename = $media['url'] . "Seg1-Frag";
         }
       for ($i = 1; $i <= $fragCount; $i++)
         {
@@ -744,7 +753,7 @@
                             }
                           else if (!$AAC_HeaderWritten)
                             {
-                              DebugLog(sprintf($format, "Discarding audio packet before AAC sequence header\nAUDIO", $packetTS, $prevAudioTS, $packetSize));
+                              DebugLog(sprintf($format, "Discarding audio packet received before AAC sequence header\nAUDIO", $packetTS, $prevAudioTS, $packetSize));
                               break;
                             }
                         }
@@ -810,7 +819,7 @@
                             }
                           else if (!$AVC_HeaderWritten)
                             {
-                              DebugLog(sprintf($format, "Discarding video packet before AVC sequence header\nVIDEO", $packetTS, $prevVideoTS, $packetSize));
+                              DebugLog(sprintf($format, "Discarding video packet received before AVC sequence header\nVIDEO", $packetTS, $prevVideoTS, $packetSize));
                               break;
                             }
                         }
