@@ -23,7 +23,8 @@
               'fragments' => 'base filename for fragments',
               'manifest'  => 'manifest file for downloading of fragments',
               'proxy'     => 'use proxy for downloading of fragments',
-              'quality'   => 'selected quality level (low|medium|high) or exact bitrate'
+              'quality'   => 'selected quality level (low|medium|high) or exact bitrate',
+              'useragent' => 'User-Agent to use for emulation of browser requests'
           )
       );
       var $params = array();
@@ -631,20 +632,22 @@
       $cli->displayHelp();
       exit(0);
     }
-  if ($cli->getParam('fragments'))
-      $baseFilename = $cli->getParam('fragments');
-  if ($cli->getParam('auth'))
-      $auth = "?" . $cli->getParam('auth');
   if ($cli->getParam('debug'))
       $debug = true;
   if ($cli->getParam('delete'))
       $delete = true;
   if ($cli->getParam('no-frameskip'))
       $noFrameSkip = true;
-  if ($cli->getParam('quality'))
-      $quality = $cli->getParam('quality');
+  if ($cli->getParam('auth'))
+      $auth = "?" . $cli->getParam('auth');
+  if ($cli->getParam('fragments'))
+      $baseFilename = $cli->getParam('fragments');
   if ($cli->getParam('proxy'))
       $cc->proxy = $cli->getParam('proxy');
+  if ($cli->getParam('quality'))
+      $quality = $cli->getParam('quality');
+  if ($cli->getParam('useragent'))
+      $cc->user_agent = $cli->getParam('useragent');
   if ($cli->getParam('manifest'))
       DownloadFragments($cli->getParam('manifest'));
   if ($cli->getParam('rename') or $rename)
