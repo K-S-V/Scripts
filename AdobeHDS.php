@@ -762,7 +762,7 @@
                         }
                       if ($noFrameSkip or ($packetSize > 0))
                         {
-                          // Check for packets with monotonic timestamps and presereve the larger audio packet
+                          // Check for packets with non-monotonic timestamps and preserve the larger audio packet
                           if (!$noFrameSkip and (!$prevAAC_Header) and ($packetTS == $prevAudioTS))
                             {
                               if ($totalTagLen <= $pAudioTagLen)
@@ -828,7 +828,7 @@
                         }
                       if ($noFrameSkip or ($packetSize > 0))
                         {
-                          // Check for packets with monotonic timestamps and presereve the larger video packet
+                          // Check for packets with non-monotonic timestamps and preserve the larger video packet
                           if (!$noFrameSkip and (!$prevAVC_Header) and ($packetTS == $prevVideoTS))
                             {
                               if ($totalTagLen <= $pVideoTagLen)
