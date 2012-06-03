@@ -7,16 +7,17 @@
   define('CODEC_ID_AAC', 0x0A);
   define('AVC_SEQUENCE_HEADER', 0x00);
   define('AAC_SEQUENCE_HEADER', 0x00);
+  define('AVC_SEQUENCE_END', 0x02);
+  define('TIMECODE_DURATION', 8);
 
   class CLI
     {
       protected static $ACCEPTED = array(
           0 => array(
-              'help'         => 'displays this help',
-              'debug'        => 'show debug ouput',
-              'delete'       => 'delete fragments after processing',
-              'no-frameskip' => 'do not filter any frames',
-              'rename'       => 'rename fragments sequentially before processing'
+              'help'   => 'displays this help',
+              'debug'  => 'show debug ouput',
+              'delete' => 'delete fragments after processing',
+              'rename' => 'rename fragments sequentially before processing'
           ),
           1 => array(
               'auth'      => 'authentication string for fragment requests',
@@ -399,18 +400,18 @@
       $qualityEntryCount = ReadByte($bootstrapInfo, $pos++);
       for ($i = 0; $i < $qualityEntryCount; $i++)
           $qualityEntryTable[$i] = ReadString($bootstrapInfo, $pos);
-      $drmData              = ReadString($bootstrapInfo, $pos);
-      $metadata             = ReadString($bootstrapInfo, $pos);
-      $segmentRunTableCount = ReadByte($bootstrapInfo, $pos++);
-      for ($i = 0; $i < $segmentRunTableCount; $i++)
+      $drmData          = ReadString($bootstrapInfo, $pos);
+      $metadata         = ReadString($bootstrapInfo, $pos);
+      $segRunTableCount = ReadByte($bootstrapInfo, $pos++);
+      for ($i = 0; $i < $segRunTableCount; $i++)
         {
           ReadBoxHeader($bootstrapInfo, $pos, $boxType, $boxSize);
           if ($boxType == "asrt")
               ParseAsrtBox($bootstrapInfo, $pos);
           $pos += $boxSize;
         }
-      $fragmentRunTableCount = ReadByte($bootstrapInfo, $pos++);
-      for ($i = 0; $i < $fragmentRunTableCount; $i++)
+      $fragRunTableCount = ReadByte($bootstrapInfo, $pos++);
+      for ($i = 0; $i < $fragRunTableCount; $i++)
         {
           ReadBoxHeader($bootstrapInfo, $pos, $boxType, $boxSize);
           if ($boxType == "afrt")
@@ -607,13 +608,13 @@
 
   ShowHeader("KSV Adobe HDS Downloader");
   $flvHeader    = pack("H*", "464c5601050000000900000000");
+  $flvHeaderLen = strlen($flvHeader);
   $format       = "%s\t%s\t\t%s\t\t%s";
   $auth         = "";
   $baseFilename = "";
   $debug        = false;
   $delete       = false;
   $fileExt      = ".f4f";
-  $noFrameSkip  = false;
   $quality      = "high";
   $rename       = false;
   $prevTagSize  = 4;
@@ -636,8 +637,6 @@
       $debug = true;
   if ($cli->getParam('delete'))
       $delete = true;
-  if ($cli->getParam('no-frameskip'))
-      $noFrameSkip = true;
   if ($cli->getParam('auth'))
       $auth = "?" . $cli->getParam('auth');
   if ($cli->getParam('fragments'))
@@ -670,8 +669,8 @@
   echo "Found $fragCount fragments\n";
   if ($fragCount)
     {
-      $flv = fopen("$outputFile", "w+b");
-      fwrite($flv, $flvHeader, 13);
+      $flv = fopen($outputFile, "w+b");
+      fwrite($flv, $flvHeader, $flvHeaderLen);
       if (isset($media) and $media['metadata'])
         {
           $media['metadata'] = base64_decode($media['metadata']);
@@ -733,7 +732,7 @@
           switch ($packetType)
           {
               case AUDIO:
-                  if ($packetTS >= $prevAudioTS)
+                  if ($packetTS >= $prevAudioTS - TIMECODE_DURATION * 5)
                     {
                       $FrameInfo = ReadByte($frag, $fragPos + $tagHeaderLen);
                       $CodecID   = ($FrameInfo & 0xF0) >> 4;
@@ -760,23 +759,14 @@
                               break;
                             }
                         }
-                      if ($noFrameSkip or ($packetSize > 0))
+                      if ($packetSize > 0)
                         {
-                          // Check for packets with non-monotonic timestamps and preserve the larger audio packet
-                          if (!$noFrameSkip and (!$prevAAC_Header) and ($packetTS == $prevAudioTS))
+                          // Check for packets with non-monotonic audio timestamps and fix them
+                          if (!$prevAAC_Header and ($packetTS <= $prevAudioTS))
                             {
-                              if ($totalTagLen <= $pAudioTagLen)
-                                {
-                                  DebugLog(sprintf($format, "Skipping overwrite of audio packet\nAUDIO", $packetTS, $prevAudioTS, $packetSize));
-                                  break;
-                                }
-                              fseek($flv, $pAudioTagPos + $pAudioTagLen, SEEK_SET);
-                              $data = fread($flv, 1048576);
-                              fseek($flv, $pAudioTagPos, SEEK_SET);
-                              fwrite($flv, $data);
-                              ftruncate($flv, ftell($flv) + 1);
-                              if ($pVideoTagPos > $pAudioTagPos)
-                                  $pVideoTagPos -= $pAudioTagLen;
+                              $packetTS += TIMECODE_DURATION + ($prevAudioTS - $packetTS);
+                              WriteInt24($frag, $fragPos + 4, $packetTS);
+                              DebugLog(sprintf($format, "Fixing audio timestamp\nAUDIO", $packetTS, $prevAudioTS, $packetSize));
                             }
                           if (($CodecID == CODEC_ID_AAC) and ($AAC_PacketType != AAC_SEQUENCE_HEADER))
                               $prevAAC_Header = false;
@@ -793,7 +783,7 @@
                       DebugLog(sprintf($format, "Skipping audio packet in fragment $i\nAUDIO", $packetTS, $prevAudioTS, $packetSize));
                   break;
               case VIDEO:
-                  if ($packetTS >= $prevVideoTS)
+                  if ($packetTS >= $prevVideoTS - TIMECODE_DURATION * 5)
                     {
                       $FrameInfo = ReadByte($frag, $fragPos + $tagHeaderLen);
                       $FrameType = ($FrameInfo & 0xF0) >> 4;
@@ -826,23 +816,14 @@
                               break;
                             }
                         }
-                      if ($noFrameSkip or ($packetSize > 0))
+                      if ($packetSize > 0)
                         {
-                          // Check for packets with non-monotonic timestamps and preserve the larger video packet
-                          if (!$noFrameSkip and (!$prevAVC_Header) and ($packetTS == $prevVideoTS))
+                          // Check for packets with non-monotonic video timestamps and fix them
+                          if (!$prevAVC_Header and (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType != AVC_SEQUENCE_END)) and ($packetTS <= $prevVideoTS))
                             {
-                              if ($totalTagLen <= $pVideoTagLen)
-                                {
-                                  DebugLog(sprintf($format, "Skipping overwrite of video packet\nVIDEO", $packetTS, $prevVideoTS, $packetSize));
-                                  break;
-                                }
-                              fseek($flv, $pVideoTagPos + $pVideoTagLen, SEEK_SET);
-                              $data = fread($flv, 1048576);
-                              fseek($flv, $pVideoTagPos, SEEK_SET);
-                              fwrite($flv, $data);
-                              ftruncate($flv, ftell($flv) + 1);
-                              if ($pAudioTagPos > $pVideoTagPos)
-                                  $pAudioTagPos -= $pVideoTagLen;
+                              $packetTS += TIMECODE_DURATION + ($prevVideoTS - $packetTS);
+                              WriteInt24($frag, $fragPos + 4, $packetTS);
+                              DebugLog(sprintf($format, "Fixing video timestamp\nVIDEO", $packetTS, $prevVideoTS, $packetSize));
                             }
                           if (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType != AVC_SEQUENCE_HEADER))
                               $prevAVC_Header = false;
