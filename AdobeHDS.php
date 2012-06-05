@@ -23,6 +23,7 @@
               'auth'      => 'authentication string for fragment requests',
               'fragments' => 'base filename for fragments',
               'manifest'  => 'manifest file for downloading of fragments',
+              'parallel'  => 'number of fragments to download simultaneously',
               'proxy'     => 'use proxy for downloading of fragments',
               'quality'   => 'selected quality level (low|medium|high) or exact bitrate',
               'useragent' => 'User-Agent to use for emulation of browser requests'
@@ -120,8 +121,10 @@
       var $compression;
       var $cookie_file;
       var $proxy;
+      var $active;
       var $cert_check;
       var $response;
+      var $mh, $ch, $mrc;
 
       function cURL($cookies = true, $cookie = 'Cookies.txt', $compression = 'gzip', $proxy = '')
         {
@@ -155,33 +158,28 @@
         {
           $process = curl_init($url);
           curl_setopt($process, CURLOPT_HTTPHEADER, $this->headers);
-          curl_setopt($process, CURLOPT_HEADER, 1);
+          curl_setopt($process, CURLOPT_HEADER, 0);
           curl_setopt($process, CURLOPT_USERAGENT, $this->user_agent);
           if ($this->cookies == true)
               curl_setopt($process, CURLOPT_COOKIEFILE, $this->cookie_file);
           if ($this->cookies == true)
               curl_setopt($process, CURLOPT_COOKIEJAR, $this->cookie_file);
           curl_setopt($process, CURLOPT_ENCODING, $this->compression);
-          curl_setopt($process, CURLOPT_TIMEOUT, 300);
+          curl_setopt($process, CURLOPT_TIMEOUT, 60);
           if ($this->proxy)
               $this->setProxy($process, $this->proxy);
           curl_setopt($process, CURLOPT_RETURNTRANSFER, 1);
           curl_setopt($process, CURLOPT_FOLLOWLOCATION, 1);
           if (!$this->cert_check)
               curl_setopt($process, CURLOPT_SSL_VERIFYPEER, 0);
-          $return = curl_exec($process);
+          $this->response = curl_exec($process);
+          if ($this->response !== false)
+              $status = curl_getinfo($process, CURLINFO_HTTP_CODE);
           curl_close($process);
-          $return = explode("\r\n\r\n", $return, 2);
-          preg_match("/HTTP.*? (\d+)/i", $return[0], $status);
-          if (isset($status[1]))
-              $status = (int) $status[1];
+          if (isset($status))
+              return $status;
           else
-              $status = 0;
-          if (isset($return[1]))
-              $this->response = $return[1];
-          else
-              $this->response = "";
-          return $status;
+              return false;
         }
 
       function post($url, $data)
@@ -195,7 +193,7 @@
           if ($this->cookies == true)
               curl_setopt($process, CURLOPT_COOKIEJAR, $this->cookie_file);
           curl_setopt($process, CURLOPT_ENCODING, $this->compression);
-          curl_setopt($process, CURLOPT_TIMEOUT, 30);
+          curl_setopt($process, CURLOPT_TIMEOUT, 60);
           if ($this->proxy)
               $this->setProxy($process, $this->proxy);
           curl_setopt($process, CURLOPT_POSTFIELDS, $data);
@@ -226,6 +224,76 @@
           }
           curl_setopt($process, CURLOPT_PROXY, $this->proxy);
           curl_setopt($process, CURLOPT_PROXYTYPE, $type);
+        }
+
+      function addDownload($url, $filename)
+        {
+          if (!isset($this->mh))
+              $this->mh = curl_multi_init();
+          if (isset($this->ch[$filename]))
+              return;
+          $this->ch[$filename]['url']      = $url;
+          $this->ch[$filename]['filename'] = $filename;
+          $this->ch[$filename]['ch']       = curl_init($url);
+          curl_setopt($this->ch[$filename]['ch'], CURLOPT_HTTPHEADER, $this->headers);
+          curl_setopt($this->ch[$filename]['ch'], CURLOPT_HEADER, 0);
+          curl_setopt($this->ch[$filename]['ch'], CURLOPT_USERAGENT, $this->user_agent);
+          curl_setopt($this->ch[$filename]['ch'], CURLOPT_FOLLOWLOCATION, 1);
+          curl_setopt($this->ch[$filename]['ch'], CURLOPT_TIMEOUT, 600);
+          curl_setopt($this->ch[$filename]['ch'], CURLOPT_BINARYTRANSFER, 1);
+          curl_setopt($this->ch[$filename]['ch'], CURLOPT_RETURNTRANSFER, 1);
+          curl_multi_add_handle($this->mh, $this->ch[$filename]['ch']);
+          do
+            {
+              $this->mrc = curl_multi_exec($this->mh, $this->active);
+            } while ($this->mrc == CURLM_CALL_MULTI_PERFORM);
+        }
+
+      function checkDownloads()
+        {
+          if (isset($this->mh))
+            {
+              $this->mrc = curl_multi_exec($this->mh, $this->active);
+              if ($this->mrc != CURLM_OK)
+                  return false;
+              $info = curl_multi_info_read($this->mh);
+              if ($info)
+                {
+                  foreach ($this->ch as $download)
+                    {
+                      if ($download['ch'] == $info['handle'])
+                          break;
+                    }
+                  $info              = curl_getinfo($download['ch']);
+                  $array['url']      = $download['url'];
+                  $array['filename'] = $download['filename'];
+                  if ($info['size_download'] && ($info['size_download'] >= $info['download_content_length']))
+                    {
+                      $array['status']   = $info['http_code'];
+                      $array['response'] = curl_multi_getcontent($download['ch']);
+                    }
+                  else
+                    {
+                      $array['status']   = false;
+                      $array['response'] = "";
+                    }
+                  $downloads[] = $array;
+                  curl_multi_remove_handle($this->mh, $download['ch']);
+                  curl_close($download['ch']);
+                  unset($this->ch[$download['filename']]);
+                }
+              if (isset($downloads) and (count($downloads) > 0))
+                {
+                  return $downloads;
+                }
+            }
+          return false;
+        }
+
+      function stopDownloads()
+        {
+          if (isset($this->mh))
+              curl_multi_close($this->mh);
         }
 
       function error($error)
@@ -555,8 +623,11 @@
 
   function DownloadFragments($manifest)
     {
-      global $auth, $baseFilename, $cc, $fragCount, $fragTable, $media, $rename;
+      global $auth, $baseFilename, $cc, $fragCount, $fragTable, $media, $parallel, $rename;
+      $fragNum = 1;
+
       ParseManifest($manifest);
+      DebugLog("Downloading Fragments:\n");
       if (strncasecmp($media['url'], "http", 4) == 0)
         {
           $baseUrl      = substr($media['url'], 0, strrpos($media['url'], '/'));
@@ -573,37 +644,73 @@
               $baseUrl = substr($manifest, 0, strrpos($manifest, '/'));
           $baseFilename = $media['url'] . "Seg1-Frag";
         }
-      for ($i = 1; $i <= $fragCount; $i++)
+
+      while (($fragNum <= $fragCount) or $cc->active)
         {
-          echo "Downloading fragment $i/$fragCount\r";
-          if (in_array_field($i, "firstFragment", $fragTable, true))
+          echo "Downloading " . ($fragNum - 1) . "/$fragCount fragments\r";
+          if (in_array_field($fragNum - 1, "firstFragment", $fragTable, true))
             {
-              $discontinuity = value_array_field($i, "firstFragment", "discontinuityIndicator", $fragTable, true);
+              $discontinuity = value_array_field($fragNum - 1, "firstFragment", "discontinuityIndicator", $fragTable, true);
               if (($discontinuity == 1) or ($discontinuity == 3))
                 {
+                  $fragNum += 1;
                   $rename = true;
+                  echo "Downloading " . ($fragNum - 1) . "/$fragCount fragments\r";
                   continue;
                 }
             }
-          if (!file_exists("$baseFilename$i"))
+          if (!$cc->ch or (count($cc->ch) < $parallel))
             {
-              $status = $cc->get("$baseUrl/$baseFilename$i" . $auth);
-              if ($status == 200)
+              if (file_exists("$baseFilename$fragNum"))
                 {
-                  if (VerifyFragment($cc->response))
-                      file_put_contents("$baseFilename$i", $cc->response);
-                  else
-                      $i--;
+                  DebugLog("Fragment $fragNum is already downloaded");
+                  $fragNum += 1;
+                  echo "Downloading " . ($fragNum - 1) . "/$fragCount fragments\r";
+                  continue;
                 }
-              else if ($status == 403)
-                  die("Access Denied! Unable to download fragments.");
-              else if ($status == 0)
-                  $i--;
-              else
-                  $rename = true;
+              if ($fragNum <= $fragCount)
+                {
+                  DebugLog("Adding fragment $fragNum to download queue");
+                  $cc->addDownload("$baseUrl/$baseFilename$fragNum" . $auth, "$baseFilename$fragNum");
+                  $fragNum += 1;
+                }
             }
+
+          $downloads = $cc->checkDownloads();
+          if ($downloads !== false)
+            {
+              foreach ($downloads as $download)
+                {
+                  if ($download['status'] == 200)
+                    {
+                      if (VerifyFragment($download['response']))
+                        {
+                          DebugLog("Fragment " . $download['filename'] . " successfully downloaded");
+                          file_put_contents($download['filename'], $download['response']);
+                        }
+                      else
+                          $cc->addDownload($download['url'], $download['filename']);
+                    }
+                  else if ($download['status'] == 403)
+                      die("Access Denied! Unable to download fragments.");
+                  else if ($download['status'] === false)
+                    {
+                      DebugLog("Fragment " . $download['filename'] . " failed to download");
+                      $cc->addDownload($download['url'], $download['filename']);
+                    }
+                  else
+                    {
+                      $fragNum += 1;
+                      $rename = true;
+                    }
+                }
+            }
+          usleep(100000);
         }
+
       echo "\n";
+      DebugLog("\nAll fragments downloaded successfully\n");
+      $cc->stopDownloads();
     }
 
   ShowHeader("KSV Adobe HDS Downloader");
@@ -615,6 +722,7 @@
   $debug        = false;
   $delete       = false;
   $fileExt      = ".f4f";
+  $parallel     = 8;
   $quality      = "high";
   $rename       = false;
   $prevTagSize  = 4;
@@ -641,6 +749,8 @@
       $auth = "?" . $cli->getParam('auth');
   if ($cli->getParam('fragments'))
       $baseFilename = $cli->getParam('fragments');
+  if ($cli->getParam('parallel'))
+      $parallel = $cli->getParam('parallel');
   if ($cli->getParam('proxy'))
       $cc->proxy = $cli->getParam('proxy');
   if ($cli->getParam('quality'))
