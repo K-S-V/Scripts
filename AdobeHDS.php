@@ -226,23 +226,25 @@
           curl_setopt($process, CURLOPT_PROXYTYPE, $type);
         }
 
-      function addDownload($url, $filename)
+      function addDownload($url, $id)
         {
           if (!isset($this->mh))
               $this->mh = curl_multi_init();
-          if (isset($this->ch[$filename]))
+          if (isset($this->ch[$id]))
               return;
-          $this->ch[$filename]['url']      = $url;
-          $this->ch[$filename]['filename'] = $filename;
-          $this->ch[$filename]['ch']       = curl_init($url);
-          curl_setopt($this->ch[$filename]['ch'], CURLOPT_HTTPHEADER, $this->headers);
-          curl_setopt($this->ch[$filename]['ch'], CURLOPT_HEADER, 0);
-          curl_setopt($this->ch[$filename]['ch'], CURLOPT_USERAGENT, $this->user_agent);
-          curl_setopt($this->ch[$filename]['ch'], CURLOPT_FOLLOWLOCATION, 1);
-          curl_setopt($this->ch[$filename]['ch'], CURLOPT_TIMEOUT, 600);
-          curl_setopt($this->ch[$filename]['ch'], CURLOPT_BINARYTRANSFER, 1);
-          curl_setopt($this->ch[$filename]['ch'], CURLOPT_RETURNTRANSFER, 1);
-          curl_multi_add_handle($this->mh, $this->ch[$filename]['ch']);
+          else
+              $download =& $this->ch[$id];
+          $download['id']  = $id;
+          $download['url'] = $url;
+          $download['ch']  = curl_init($url);
+          curl_setopt($download['ch'], CURLOPT_HTTPHEADER, $this->headers);
+          curl_setopt($download['ch'], CURLOPT_HEADER, 0);
+          curl_setopt($download['ch'], CURLOPT_USERAGENT, $this->user_agent);
+          curl_setopt($download['ch'], CURLOPT_FOLLOWLOCATION, 1);
+          curl_setopt($download['ch'], CURLOPT_TIMEOUT, 300);
+          curl_setopt($download['ch'], CURLOPT_BINARYTRANSFER, 1);
+          curl_setopt($download['ch'], CURLOPT_RETURNTRANSFER, 1);
+          curl_multi_add_handle($this->mh, $download['ch']);
           do
             {
               $this->mrc = curl_multi_exec($this->mh, $this->active);
@@ -256,17 +258,16 @@
               $this->mrc = curl_multi_exec($this->mh, $this->active);
               if ($this->mrc != CURLM_OK)
                   return false;
-              $info = curl_multi_info_read($this->mh);
-              if ($info)
+              while ($info = curl_multi_info_read($this->mh))
                 {
                   foreach ($this->ch as $download)
                     {
                       if ($download['ch'] == $info['handle'])
                           break;
                     }
-                  $info              = curl_getinfo($download['ch']);
-                  $array['url']      = $download['url'];
-                  $array['filename'] = $download['filename'];
+                  $info         = curl_getinfo($download['ch']);
+                  $array['id']  = $download['id'];
+                  $array['url'] = $download['url'];
                   if ($info['size_download'] && ($info['size_download'] >= $info['download_content_length']))
                     {
                       $array['status']   = $info['http_code'];
@@ -280,12 +281,10 @@
                   $downloads[] = $array;
                   curl_multi_remove_handle($this->mh, $download['ch']);
                   curl_close($download['ch']);
-                  unset($this->ch[$download['filename']]);
+                  unset($this->ch[$download['id']]);
                 }
               if (isset($downloads) and (count($downloads) > 0))
-                {
                   return $downloads;
-                }
             }
           return false;
         }
@@ -315,6 +314,11 @@
     {
       $temp = array_slice($a, $pos, 1, true);
       return key($temp);
+    }
+
+  function GetString($xmlObject)
+    {
+      return trim((string) $xmlObject);
     }
 
   function ReadByte($str, $pos)
@@ -431,7 +435,7 @@
       return false;
     }
 
-  function value_array_field($needle, $needle_field, $value_field, $haystack, $strict = false)
+  function value_in_array_field($needle, $needle_field, $value_field, $haystack, $strict = false)
     {
       if ($strict)
         {
@@ -544,27 +548,40 @@
 
   function ParseManifest($manifest)
     {
-      global $cc, $media, $quality;
+      global $baseUrl, $cc, $media, $quality;
       $status = $cc->get($manifest);
       if ($status == 403)
           die("Access Denied! Unable to download manifest.");
       else if ($status != 200)
           die("Unable to download manifest");
-      $xml = simplexml_load_string($cc->response);
-      $xml->registerXPathNamespace("ns", "http://ns.adobe.com/f4m/1.0");
+      $xml       = simplexml_load_string($cc->response);
+      $namespace = $xml->getDocNamespaces();
+      $namespace = $namespace[''];
+      $xml->registerXPathNamespace("ns", $namespace);
       $streams = $xml->xpath("/ns:manifest/ns:media");
       foreach ($streams as $stream)
         {
           $bitrate   = isset($stream['bitrate']) ? (int) $stream['bitrate'] : 1;
-          $streamId  = trim((string) $stream['streamId']);
+          $streamId  = GetString($stream['streamId']);
           $bootstrap = $xml->xpath("/ns:manifest/ns:bootstrapInfo[@id='" . $stream['bootstrapInfoId'] . "']");
-          $metadata  = $xml->xpath("/ns:manifest/ns:media[@streamId='" . $streamId . "']/ns:metadata");
+          if (isset($bootstrap[0]['url']))
+            {
+              $bootstrapUrl = $xml->xpath("/ns:manifest/ns:bootstrapInfo[@id='" . $stream['bootstrapInfoId'] . "']/@url");
+              $bootstrapUrl = GetString($bootstrapUrl[0]['url']);
+              if (strncasecmp($bootstrapUrl, "http", 4) == 0)
+                  $cc->get($bootstrapUrl);
+              else
+                  $cc->get("$baseUrl/$bootstrapUrl");
+              $media[$bitrate]['bootstrap'] = $cc->response;
+            }
+          else
+              $media[$bitrate]['bootstrap'] = base64_decode(GetString($bootstrap[0]));
+          $metadata = $xml->xpath("/ns:manifest/ns:media[@streamId='" . $streamId . "']/ns:metadata");
           if (isset($metadata[0]))
-              $media[$bitrate]['metadata'] = trim((string) $metadata[0]);
+              $media[$bitrate]['metadata'] = GetString($metadata[0]);
           else
               $media[$bitrate]['metadata'] = "";
-          $media[$bitrate]['bootstrap'] = trim((string) $bootstrap[0]);
-          $media[$bitrate]['url']       = trim((string) $stream['url']);
+          $media[$bitrate]['url'] = GetString($stream['url']);
         }
 
       krsort($media, SORT_NUMERIC);
@@ -592,7 +609,7 @@
             }
         }
 
-      $bootstrapInfo = base64_decode($media['bootstrap']);
+      $bootstrapInfo = $media['bootstrap'];
       ReadBoxHeader($bootstrapInfo, $pos, $boxType, $boxSize);
       if ($boxType == "abst")
           ParseBootstrapBox($bootstrapInfo, $pos);
@@ -623,56 +640,53 @@
 
   function DownloadFragments($manifest)
     {
-      global $auth, $baseFilename, $cc, $fragCount, $fragTable, $media, $parallel, $rename;
-      $fragNum = 1;
+      global $auth, $baseFilename, $baseUrl, $cc, $fragCount, $fragTable, $media, $parallel, $rename;
+      $fragNum = 0;
 
+      if (strpos($manifest, '?') !== false)
+        {
+          $baseUrl = substr($manifest, 0, strpos($manifest, '?'));
+          $baseUrl = substr($baseUrl, 0, strrpos($baseUrl, '/'));
+        }
+      else
+          $baseUrl = substr($manifest, 0, strrpos($manifest, '/'));
       ParseManifest($manifest);
-      DebugLog("Downloading Fragments:\n");
       if (strncasecmp($media['url'], "http", 4) == 0)
         {
           $baseUrl      = substr($media['url'], 0, strrpos($media['url'], '/'));
           $baseFilename = substr($media['url'], strrpos($media['url'], '/') + 1) . "Seg1-Frag";
         }
       else
-        {
-          if (strpos($manifest, '?') !== false)
-            {
-              $baseUrl = substr($manifest, 0, strpos($manifest, '?'));
-              $baseUrl = substr($baseUrl, 0, strrpos($baseUrl, '/'));
-            }
-          else
-              $baseUrl = substr($manifest, 0, strrpos($manifest, '/'));
           $baseFilename = $media['url'] . "Seg1-Frag";
-        }
+      DebugLog("Downloading Fragments:\n");
 
-      while (($fragNum <= $fragCount) or $cc->active)
+      while (($fragNum < $fragCount) or $cc->active)
         {
-          echo "Downloading " . ($fragNum - 1) . "/$fragCount fragments\r";
-          if (in_array_field($fragNum - 1, "firstFragment", $fragTable, true))
+          echo "Downloading $fragNum/$fragCount fragments\r";
+          if (in_array_field($fragNum, "firstFragment", $fragTable, true))
             {
-              $discontinuity = value_array_field($fragNum - 1, "firstFragment", "discontinuityIndicator", $fragTable, true);
+              $discontinuity = value_in_array_field($fragNum, "firstFragment", "discontinuityIndicator", $fragTable, true);
               if (($discontinuity == 1) or ($discontinuity == 3))
                 {
                   $fragNum += 1;
                   $rename = true;
-                  echo "Downloading " . ($fragNum - 1) . "/$fragCount fragments\r";
+                  echo "Downloading $fragNum/$fragCount fragments\r";
                   continue;
                 }
             }
-          if (!$cc->ch or (count($cc->ch) < $parallel))
+          if (count($cc->ch) < $parallel)
             {
-              if (file_exists("$baseFilename$fragNum"))
+              if ($fragNum < $fragCount)
                 {
-                  DebugLog("Fragment $fragNum is already downloaded");
                   $fragNum += 1;
-                  echo "Downloading " . ($fragNum - 1) . "/$fragCount fragments\r";
-                  continue;
-                }
-              if ($fragNum <= $fragCount)
-                {
+                  if (file_exists("$baseFilename$fragNum"))
+                    {
+                      DebugLog("Fragment $fragNum is already downloaded");
+                      echo "Downloading $fragNum/$fragCount fragments\r";
+                      continue;
+                    }
                   DebugLog("Adding fragment $fragNum to download queue");
-                  $cc->addDownload("$baseUrl/$baseFilename$fragNum" . $auth, "$baseFilename$fragNum");
-                  $fragNum += 1;
+                  $cc->addDownload("$baseUrl/$baseFilename$fragNum$auth", "$baseFilename$fragNum");
                 }
             }
 
@@ -685,24 +699,21 @@
                     {
                       if (VerifyFragment($download['response']))
                         {
-                          DebugLog("Fragment " . $download['filename'] . " successfully downloaded");
-                          file_put_contents($download['filename'], $download['response']);
+                          DebugLog("Fragment " . $download['id'] . " successfully downloaded");
+                          file_put_contents($download['id'], $download['response']);
                         }
                       else
-                          $cc->addDownload($download['url'], $download['filename']);
+                          $cc->addDownload($download['url'], $download['id']);
                     }
                   else if ($download['status'] == 403)
                       die("Access Denied! Unable to download fragments.");
                   else if ($download['status'] === false)
                     {
-                      DebugLog("Fragment " . $download['filename'] . " failed to download");
-                      $cc->addDownload($download['url'], $download['filename']);
+                      DebugLog("Fragment " . $download['id'] . " failed to download");
+                      $cc->addDownload($download['url'], $download['id']);
                     }
                   else
-                    {
-                      $fragNum += 1;
                       $rename = true;
-                    }
                 }
             }
           usleep(100000);
