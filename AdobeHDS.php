@@ -674,7 +674,7 @@
                   continue;
                 }
             }
-          if (count($cc->ch) < $parallel)
+          while (count($cc->ch) < $parallel)
             {
               if ($fragNum < $fragCount)
                 {
@@ -688,6 +688,8 @@
                   DebugLog("Adding fragment $fragNum to download queue");
                   $cc->addDownload("$baseUrl/$baseFilename$fragNum$auth", "$baseFilename$fragNum");
                 }
+              else
+                  break;
             }
 
           $downloads = $cc->checkDownloads();
@@ -716,7 +718,7 @@
                       $rename = true;
                 }
             }
-          usleep(100000);
+          usleep(50000);
         }
 
       echo "\n";
