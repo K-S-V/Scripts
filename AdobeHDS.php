@@ -662,34 +662,28 @@
 
       while (($fragNum < $fragCount) or $cc->active)
         {
-          echo "Downloading $fragNum/$fragCount fragments\r";
-          if (in_array_field($fragNum, "firstFragment", $fragTable, true))
+          while ((count($cc->ch) < $parallel) and ($fragNum < $fragCount))
             {
-              $discontinuity = value_in_array_field($fragNum, "firstFragment", "discontinuityIndicator", $fragTable, true);
-              if (($discontinuity == 1) or ($discontinuity == 3))
+              $fragNum += 1;
+              echo "Downloading $fragNum/$fragCount fragments\r";
+              if (in_array_field($fragNum, "firstFragment", $fragTable, true))
                 {
-                  $fragNum += 1;
-                  $rename = true;
-                  echo "Downloading $fragNum/$fragCount fragments\r";
-                  continue;
-                }
-            }
-          while (count($cc->ch) < $parallel)
-            {
-              if ($fragNum < $fragCount)
-                {
-                  $fragNum += 1;
-                  if (file_exists("$baseFilename$fragNum"))
+                  $discontinuity = value_in_array_field($fragNum, "firstFragment", "discontinuityIndicator", $fragTable, true);
+                  if (($discontinuity == 1) or ($discontinuity == 3))
                     {
-                      DebugLog("Fragment $fragNum is already downloaded");
+                      $rename = true;
                       echo "Downloading $fragNum/$fragCount fragments\r";
                       continue;
                     }
-                  DebugLog("Adding fragment $fragNum to download queue");
-                  $cc->addDownload("$baseUrl/$baseFilename$fragNum$auth", "$baseFilename$fragNum");
                 }
-              else
-                  break;
+              if (file_exists("$baseFilename$fragNum"))
+                {
+                  DebugLog("Fragment $fragNum is already downloaded");
+                  echo "Downloading $fragNum/$fragCount fragments\r";
+                  continue;
+                }
+              DebugLog("Adding fragment $fragNum to download queue");
+              $cc->addDownload("$baseUrl/$baseFilename$fragNum$auth", "$baseFilename$fragNum");
             }
 
           $downloads = $cc->checkDownloads();
