@@ -365,8 +365,9 @@
 
       function setProxy(&$process, $proxy)
         {
-          $type  = substr($proxy, 0, stripos($proxy, ":"));
-          $proxy = substr($proxy, stripos($proxy, "//") + 2);
+          $type = substr($proxy, 0, stripos($proxy, "://"));
+          if ($type)
+              $proxy = substr($proxy, stripos($proxy, "://") + 3);
           switch ($type)
           {
               case "socks4":
@@ -378,7 +379,7 @@
               default:
                   $type = CURLPROXY_HTTP;
           }
-          curl_setopt($process, CURLOPT_PROXY, $this->proxy);
+          curl_setopt($process, CURLOPT_PROXY, $proxy);
           curl_setopt($process, CURLOPT_PROXYTYPE, $type);
         }
 
