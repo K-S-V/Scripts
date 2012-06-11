@@ -506,13 +506,13 @@
         }
       $segCount = ReadInt32($asrt, $pos);
       $pos += 4;
-      DebugLog("Segment Entries:\n\nNumber\tFragments");
+      DebugLog(sprintf("%s:\n\n %-8s%-10s", "Segment Entries", "Number", "Fragments"));
       for ($i = 0; $i < $segCount; $i++)
         {
           $segTable[$i]['firstSegment']        = ReadInt32($asrt, $pos);
           $segTable[$i]['fragmentsPerSegment'] = ReadInt32($asrt, $pos + 4);
           $pos += 8;
-          DebugLog($segTable[$i]['firstSegment'] . "\t" . $segTable[$i]['fragmentsPerSegment']);
+          DebugLog(sprintf(" %-8s%-10s", $segTable[$i]['firstSegment'], $segTable[$i]['fragmentsPerSegment']));
         }
       DebugLog("");
       $fragCount = $segTable[0]['fragmentsPerSegment'];
@@ -532,7 +532,7 @@
         }
       $fragCount = ReadInt32($afrt, $pos);
       $pos += 4;
-      DebugLog("Fragment Entries:\n\nNumber\tTimestamp\tDuration\tDiscontinuity");
+      DebugLog(sprintf("%s:\n\n %-8s%-16s%-16s%-16s", "Fragment Entries", "Number", "Timestamp", "Duration", "Discontinuity"));
       for ($i = 0; $i < $fragCount; $i++)
         {
           $fragTable[$i]['firstFragment']          = ReadInt32($afrt, $pos);
@@ -542,7 +542,7 @@
           $pos += 16;
           if ($fragTable[$i]['fragmentDuration'] == 0)
               $fragTable[$i]['discontinuityIndicator'] = ReadByte($afrt, $pos++);
-          DebugLog($fragTable[$i]['firstFragment'] . "\t" . $fragTable[$i]['firstFragmentTimestamp'] . "\t\t" . $fragTable[$i]['fragmentDuration'] . "\t\t" . $fragTable[$i]['discontinuityIndicator']);
+          DebugLog(sprintf(" %-8s%-16s%-16s%-16s", $fragTable[$i]['firstFragment'], $fragTable[$i]['firstFragmentTimestamp'], $fragTable[$i]['fragmentDuration'], $fragTable[$i]['discontinuityIndicator']));
         }
       DebugLog("");
     }
@@ -724,7 +724,7 @@
   ShowHeader("KSV Adobe HDS Downloader");
   $flvHeader    = pack("H*", "464c5601050000000900000000");
   $flvHeaderLen = strlen($flvHeader);
-  $format       = "%8s%16s%16s%8s";
+  $format       = " %-8s%-16s%-16s%-8s";
   $auth         = "";
   $baseFilename = "";
   $debug        = false;
@@ -811,6 +811,7 @@
   $AVC_HeaderWritten = false;
   $AAC_HeaderWritten = false;
   $timeStart         = microtime(true);
+  DebugLog("Joining Fragments:\n");
   for ($i = 1; $i <= $fragCount; $i++)
     {
       $fragLen = 0;
@@ -840,7 +841,7 @@
           continue;
         }
 
-      DebugLog(sprintf($format . "%16s", "Type", "CurrentTS", "PreviousTS", "Size", "Position"));
+      DebugLog(sprintf($format . "%-16s", "Type", "CurrentTS", "PreviousTS", "Size", "Position"));
       while ($fragPos < $fragLen)
         {
           $packetType = ReadByte($frag, $fragPos);
@@ -892,7 +893,7 @@
                               $prevAAC_Header = false;
                           $pAudioTagPos = ftell($flv);
                           fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
-                          DebugLog(sprintf($format . "%16s", "AUDIO", $packetTS, $prevAudioTS, $packetSize, $pAudioTagPos));
+                          DebugLog(sprintf($format . "%-16s", "AUDIO", $packetTS, $prevAudioTS, $packetSize, $pAudioTagPos));
                           $prevAudioTS  = $packetTS;
                           $pAudioTagLen = $totalTagLen;
                         }
@@ -950,7 +951,7 @@
                               $prevAVC_Header = false;
                           $pVideoTagPos = ftell($flv);
                           fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
-                          DebugLog(sprintf($format . "%16s", "VIDEO", $packetTS, $prevVideoTS, $packetSize, $pVideoTagPos));
+                          DebugLog(sprintf($format . "%-16s", "VIDEO", $packetTS, $prevVideoTS, $packetSize, $pVideoTagPos));
                           $prevVideoTS  = $packetTS;
                           $pVideoTagLen = $totalTagLen;
                         }
