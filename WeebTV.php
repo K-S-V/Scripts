@@ -181,7 +181,10 @@
         {
           $type = substr($proxy, 0, stripos($proxy, "://"));
           if ($type)
+            {
+              $type  = strtolower($type);
               $proxy = substr($proxy, stripos($proxy, "://") + 3);
+            }
           switch ($type)
           {
               case "socks4":

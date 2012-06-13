@@ -211,7 +211,10 @@
         {
           $type = substr($proxy, 0, stripos($proxy, "://"));
           if ($type)
+            {
+              $type  = strtolower($type);
               $proxy = substr($proxy, stripos($proxy, "://") + 3);
+            }
           switch ($type)
           {
               case "socks4":
@@ -324,12 +327,14 @@
 
   function ReadByte($str, $pos)
     {
-      return intval(bin2hex(substr($str, $pos, 1)), 16);
+      $int = unpack("C", substr($str, $pos, 1));
+      return $int[1];
     }
 
   function ReadInt24($str, $pos)
     {
-      return intval(bin2hex(substr($str, $pos, 3)), 16);
+      $int32 = unpack("N", "\x00" . substr($str, $pos, 3));
+      return $int32[1];
     }
 
   function ReadInt32($str, $pos)
@@ -585,7 +590,18 @@
           $media[$bitrate]['url'] = GetString($stream['url']);
         }
 
+      // Available qualities
       krsort($media, SORT_NUMERIC);
+      DebugLog("Manifest Entries:\n");
+      DebugLog(sprintf(" %-8s%s", "Bitrate", "URL"));
+      for ($i = 0; $i < count($media); $i++)
+        {
+          $key = KeyName($media, $i);
+          DebugLog(sprintf(" %-8d%s", $key, $media[$key]['url']));
+        }
+      DebugLog("");
+
+      // Quality selection
       if (is_numeric($quality))
           $media = $media[$quality];
       else
@@ -673,14 +689,12 @@
                   if (($discontinuity == 1) or ($discontinuity == 3))
                     {
                       $rename = true;
-                      echo "Downloading $fragNum/$fragCount fragments\r";
                       continue;
                     }
                 }
               if (file_exists("$baseFilename$fragNum"))
                 {
                   DebugLog("Fragment $fragNum is already downloaded");
-                  echo "Downloading $fragNum/$fragCount fragments\r";
                   continue;
                 }
               DebugLog("Adding fragment $fragNum to download queue");
@@ -700,17 +714,25 @@
                           file_put_contents($download['id'], $download['response']);
                         }
                       else
+                        {
+                          DebugLog("Fragment " . $download['id'] . " failed to verify");
+                          DebugLog("Adding fragment " . $download['id'] . " to download queue");
                           $cc->addDownload($download['url'], $download['id']);
+                        }
                     }
                   else if ($download['status'] == 403)
                       die("Access Denied! Unable to download fragments.");
                   else if ($download['status'] === false)
                     {
                       DebugLog("Fragment " . $download['id'] . " failed to download");
+                      DebugLog("Adding fragment " . $download['id'] . " to download queue");
                       $cc->addDownload($download['url'], $download['id']);
                     }
                   else
+                    {
+                      DebugLog("Fragment " . $download['id'] . " doesn't exist");
                       $rename = true;
+                    }
                 }
             }
           usleep(50000);
