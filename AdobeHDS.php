@@ -23,6 +23,7 @@
               'auth'      => 'authentication string for fragment requests',
               'fragments' => 'base filename for fragments',
               'manifest'  => 'manifest file for downloading of fragments',
+              'outdir'    => 'destination folder for output file',
               'parallel'  => 'number of fragments to download simultaneously',
               'proxy'     => 'use proxy for downloading of fragments',
               'quality'   => 'selected quality level (low|medium|high) or exact bitrate',
@@ -749,6 +750,7 @@
   $format       = " %-8s%-16s%-16s%-8s";
   $auth         = "";
   $baseFilename = "";
+  $outDir       = "";
   $debug        = false;
   $delete       = false;
   $fileExt      = ".f4f";
@@ -779,6 +781,8 @@
       $auth = "?" . $cli->getParam('auth');
   if ($cli->getParam('fragments'))
       $baseFilename = $cli->getParam('fragments');
+  if ($cli->getParam('outdir'))
+      $outDir = $cli->getParam('outdir');
   if ($cli->getParam('parallel'))
       $parallel = $cli->getParam('parallel');
   if ($cli->getParam('proxy'))
@@ -792,8 +796,29 @@
   if ($cli->getParam('rename') or $rename)
       RenameFragments($baseFilename, $fileExt);
 
-  $fragCount = 0;
-  $baseFilename != "" ? $outputFile = "$baseFilename.flv" : $outputFile = "Joined.flv";
+  $fragCount    = 0;
+  $baseFilename = str_replace('\\', '/', $baseFilename);
+  if ((substr($baseFilename, -1) != '/') and (substr($baseFilename, -1) != ':'))
+    {
+      if (strrpos($baseFilename, '/'))
+          $outFile = substr($baseFilename, strrpos($baseFilename, '/') + 1) . ".flv";
+      else
+          $outFile = $baseFilename . ".flv";
+    }
+  else
+      $outFile = "Joined.flv";
+  if ($outDir)
+    {
+      $outDir = str_replace('\\', '/', $outDir);
+      if (substr($outDir, -1) != '/')
+          $outDir = $outDir . '/';
+      if (!file_exists($outDir))
+        {
+          DebugLog("Creating destination directory " . $outDir);
+          mkdir($outDir, 0777, true);
+        }
+    }
+  $outFile = $outDir . $outFile;
   while (true)
     {
       if (file_exists($baseFilename . ($fragCount + 1) . $fileExt))
@@ -809,7 +834,9 @@
   echo "Found $fragCount fragments\n";
   if ($fragCount)
     {
-      $flv = fopen($outputFile, "w+b");
+      $flv = fopen($outFile, "w+b");
+      if (!$flv)
+          die("Failed to open " . $outFile);
       fwrite($flv, $flvHeader, $flvHeaderLen);
       if (isset($media) and $media['metadata'])
         {
