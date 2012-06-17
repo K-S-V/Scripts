@@ -1012,6 +1012,8 @@
                   break;
               case SCRIPT_DATA:
                   break;
+              default:
+                  die(sprintf("Unknown packet type %s encountered\nFragment seems encrypted and can't be recovered by script", $packetType));
           }
           $fragPos += $totalTagLen;
         }
