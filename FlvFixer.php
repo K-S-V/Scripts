@@ -117,12 +117,14 @@
 
   function ReadByte($str, $pos)
     {
-      return intval(bin2hex(substr($str, $pos, 1)), 16);
+      $int = unpack("C", substr($str, $pos, 1));
+      return $int[1];
     }
 
   function ReadInt24($str, $pos)
     {
-      return intval(bin2hex(substr($str, $pos, 3)), 16);
+      $int32 = unpack("N", "\x00" . substr($str, $pos, 3));
+      return $int32[1];
     }
 
   function ReadInt32($str, $pos)
@@ -161,7 +163,7 @@
   ShowHeader("KSV FLV Fixer");
   $flvHeader    = pack("H*", "464c5601050000000900000000");
   $flvHeaderLen = strlen($flvHeader);
-  $format       = "%s\t%s\t\t%s\t\t%s";
+  $format       = " %-8s%-16s%-16s%-8s";
   $debug        = false;
   $prevTagSize  = 4;
   $tagHeaderLen = 11;
@@ -211,15 +213,16 @@
   $flvOut = fopen($out, "w+b");
   fwrite($flvOut, $flvHeader, $flvHeaderLen);
 
-  DebugLog(sprintf("%s\t%s\t%s\t%s\t\t%s", "Type", "CurrentTS", "PreviousTS", "Size", "Position"));
+  DebugLog(sprintf($format . "%-16s", "Type", "CurrentTS", "PreviousTS", "Size", "Position"));
   while ($filePos < $fileLen)
     {
-      $flvTag     = fread($flvIn, $tagHeaderLen);
-      $tagPos     = 0;
-      $packetType = ReadByte($flvTag, $tagPos);
-      $packetSize = ReadInt24($flvTag, $tagPos + 1);
-      $packetTS   = ReadInt24($flvTag, $tagPos + 4);
-      $flvTag .= fread($flvIn, $packetSize + $prevTagSize);
+      $flvTag      = fread($flvIn, $tagHeaderLen);
+      $tagPos      = 0;
+      $packetType  = ReadByte($flvTag, $tagPos);
+      $packetSize  = ReadInt24($flvTag, $tagPos + 1);
+      $packetTS    = ReadInt24($flvTag, $tagPos + 4);
+      $packetTS    = $packetTS | (ReadByte($flvTag, $tagPos + 7) << 24);
+      $flvTag      = $flvTag . fread($flvIn, $packetSize + $prevTagSize);
       $totalTagLen = $tagHeaderLen + $packetSize + $prevTagSize;
       if (strlen($flvTag) != $totalTagLen)
         {
@@ -240,7 +243,7 @@
                         {
                           if ($AAC_HeaderWritten)
                             {
-                              DebugLog(sprintf($format, "Skipping AAC sequence header\nAUDIO", $packetTS, $prevAudioTS, $packetSize));
+                              DebugLog(sprintf("%s\n" . $format, "Skipping AAC sequence header", "AUDIO", $packetTS, $prevAudioTS, $packetSize));
                               break;
                             }
                           else
@@ -252,7 +255,7 @@
                         }
                       else if (!$AAC_HeaderWritten)
                         {
-                          DebugLog(sprintf($format, "Discarding audio packet received before AAC sequence header\nAUDIO", $packetTS, $prevAudioTS, $packetSize));
+                          DebugLog(sprintf("%s\n" . $format, "Discarding audio packet received before AAC sequence header", "AUDIO", $packetTS, $prevAudioTS, $packetSize));
                           break;
                         }
                     }
@@ -262,22 +265,24 @@
                       if (!$prevAAC_Header and ($packetTS <= $prevAudioTS))
                         {
                           $packetTS += TIMECODE_DURATION + ($prevAudioTS - $packetTS);
-                          WriteInt24($flvTag, $tagPos + 4, $packetTS);
-                          DebugLog(sprintf($format, "Fixing audio timestamp\nAUDIO", $packetTS, $prevAudioTS, $packetSize));
+                          WriteInt24($flvTag, $tagPos + 4, ($packetTS & 0x00FFFFFF));
+                          WriteByte($flvTag, $tagPos + 7, ($packetTS & 0xFF000000) >> 24);
+                          DebugLog(sprintf("%s\n" . $format, "Fixing audio timestamp", "AUDIO", $packetTS, $prevAudioTS, $packetSize));
                         }
                       if (($CodecID == CODEC_ID_AAC) and ($AAC_PacketType != AAC_SEQUENCE_HEADER))
                           $prevAAC_Header = false;
                       $pAudioTagPos = ftell($flvOut);
                       fwrite($flvOut, $flvTag, $totalTagLen);
-                      DebugLog(sprintf($format, "AUDIO", $packetTS, $prevAudioTS, $packetSize . "\t\t" . $pAudioTagPos));
+                      if ($debug)
+                          DebugLog(sprintf($format . "%-16s", "AUDIO", $packetTS, $prevAudioTS, $packetSize, $pAudioTagPos));
                       $prevAudioTS  = $packetTS;
                       $pAudioTagLen = $totalTagLen;
                     }
                   else
-                      DebugLog(sprintf($format, "Skipping small sized audio packet\nAUDIO", $packetTS, $prevAudioTS, $packetSize));
+                      DebugLog(sprintf("%s\n" . $format, "Skipping small sized audio packet", "AUDIO", $packetTS, $prevAudioTS, $packetSize));
                 }
               else
-                  DebugLog(sprintf($format, "Skipping audio packet\nAUDIO", $packetTS, $prevAudioTS, $packetSize));
+                  DebugLog(sprintf("%s\n" . $format, "Skipping audio packet", "AUDIO", $packetTS, $prevAudioTS, $packetSize));
               break;
           case VIDEO:
               if ($packetTS >= $prevVideoTS - TIMECODE_DURATION * 5)
@@ -287,7 +292,7 @@
                   $CodecID   = $FrameInfo & 0x0F;
                   if ($FrameType == FRAME_TYPE_INFO)
                     {
-                      DebugLog(sprintf($format, "Skipping video info frame\nVIDEO", $packetTS, $prevVideoTS, $packetSize));
+                      DebugLog(sprintf("%s\n" . $format, "Skipping video info frame", "VIDEO", $packetTS, $prevVideoTS, $packetSize));
                       break;
                     }
                   if ($CodecID == CODEC_ID_AVC)
@@ -297,7 +302,7 @@
                         {
                           if ($AVC_HeaderWritten)
                             {
-                              DebugLog(sprintf($format, "Skipping AVC sequence header\nVIDEO", $packetTS, $prevVideoTS, $packetSize));
+                              DebugLog(sprintf("%s\n" . $format, "Skipping AVC sequence header", "VIDEO", $packetTS, $prevVideoTS, $packetSize));
                               break;
                             }
                           else
@@ -309,7 +314,7 @@
                         }
                       else if (!$AVC_HeaderWritten)
                         {
-                          DebugLog(sprintf($format, "Discarding video packet received before AVC sequence header\nVIDEO", $packetTS, $prevVideoTS, $packetSize));
+                          DebugLog(sprintf("%s\n" . $format, "Discarding video packet received before AVC sequence header", "VIDEO", $packetTS, $prevVideoTS, $packetSize));
                           break;
                         }
                     }
@@ -319,27 +324,29 @@
                       if (!$prevAVC_Header and (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType != AVC_SEQUENCE_END)) and ($packetTS <= $prevVideoTS))
                         {
                           $packetTS += TIMECODE_DURATION + ($prevVideoTS - $packetTS);
-                          WriteInt24($flvTag, $tagPos + 4, $packetTS);
-                          DebugLog(sprintf($format, "Fixing video timestamp\nVIDEO", $packetTS, $prevVideoTS, $packetSize));
+                          WriteInt24($flvTag, $tagPos + 4, ($packetTS & 0x00FFFFFF));
+                          WriteByte($flvTag, $tagPos + 7, ($packetTS & 0xFF000000) >> 24);
+                          DebugLog(sprintf("%s\n" . $format, "Fixing video timestamp", "VIDEO", $packetTS, $prevVideoTS, $packetSize));
                         }
                       if (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType != AVC_SEQUENCE_HEADER))
                           $prevAVC_Header = false;
                       $pVideoTagPos = ftell($flvOut);
                       fwrite($flvOut, $flvTag, $totalTagLen);
-                      DebugLog(sprintf($format, "VIDEO", $packetTS, $prevVideoTS, $packetSize . "\t\t" . $pVideoTagPos));
+                      if ($debug)
+                          DebugLog(sprintf($format . "%-16s", "VIDEO", $packetTS, $prevVideoTS, $packetSize, $pVideoTagPos));
                       $prevVideoTS  = $packetTS;
                       $pVideoTagLen = $totalTagLen;
                     }
                   else
-                      DebugLog(sprintf($format, "Skipping small sized video packet\nVIDEO", $packetTS, $prevVideoTS, $packetSize));
+                      DebugLog(sprintf("%s\n" . $format, "Skipping small sized video packet", "VIDEO", $packetTS, $prevVideoTS, $packetSize));
                 }
               else
-                  DebugLog(sprintf($format, "Skipping video packet\nVIDEO", $packetTS, $prevVideoTS, $packetSize));
+                  DebugLog(sprintf("%s\n" . $format, "Skipping video packet", "VIDEO", $packetTS, $prevVideoTS, $packetSize));
               break;
           case SCRIPT_DATA:
               $pMetaTagPos = ftell($flvOut);
               fwrite($flvOut, $flvTag, $totalTagLen);
-              DebugLog(sprintf($format, "META", $packetTS, 0, $packetSize . "\t\t" . $pMetaTagPos));
+              DebugLog(sprintf($format . "%-16s", "META", $packetTS, 0, $packetSize, $pMetaTagPos));
               break;
       }
       $filePos += $totalTagLen;
