@@ -893,10 +893,10 @@
       DebugLog(sprintf($format . "%-16s", "Type", "CurrentTS", "PreviousTS", "Size", "Position"));
       while ($fragPos < $fragLen)
         {
-          $packetType = ReadByte($frag, $fragPos);
-          $packetSize = ReadInt24($frag, $fragPos + 1);
-          $packetTS   = ReadInt24($frag, $fragPos + 4);
-          $packetTS |= ReadByte($frag, $fragPos + 7) << 24;
+          $packetType  = ReadByte($frag, $fragPos);
+          $packetSize  = ReadInt24($frag, $fragPos + 1);
+          $packetTS    = ReadInt24($frag, $fragPos + 4);
+          $packetTS    = $packetTS | (ReadByte($frag, $fragPos + 7) << 24);
           $totalTagLen = $tagHeaderLen + $packetSize + $prevTagSize;
           switch ($packetType)
           {
@@ -942,7 +942,8 @@
                               $prevAAC_Header = false;
                           $pAudioTagPos = ftell($flv);
                           fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
-                          DebugLog(sprintf($format . "%-16s", "AUDIO", $packetTS, $prevAudioTS, $packetSize, $pAudioTagPos));
+                          if ($debug)
+                              DebugLog(sprintf($format . "%-16s", "AUDIO", $packetTS, $prevAudioTS, $packetSize, $pAudioTagPos));
                           $prevAudioTS  = $packetTS;
                           $pAudioTagLen = $totalTagLen;
                         }
@@ -1000,7 +1001,8 @@
                               $prevAVC_Header = false;
                           $pVideoTagPos = ftell($flv);
                           fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
-                          DebugLog(sprintf($format . "%-16s", "VIDEO", $packetTS, $prevVideoTS, $packetSize, $pVideoTagPos));
+                          if ($debug)
+                              DebugLog(sprintf($format . "%-16s", "VIDEO", $packetTS, $prevVideoTS, $packetSize, $pVideoTagPos));
                           $prevVideoTS  = $packetTS;
                           $pVideoTagLen = $totalTagLen;
                         }
@@ -1013,7 +1015,7 @@
               case SCRIPT_DATA:
                   break;
               default:
-                  die(sprintf("Unknown packet type %s encountered\nFragment seems encrypted and can't be recovered by script", $packetType));
+                  die(sprintf("Unknown packet type %s encountered! Encrypted fragments can't be recovered.", $packetType));
           }
           $fragPos += $totalTagLen;
         }
