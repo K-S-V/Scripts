@@ -603,21 +603,25 @@
       DebugLog("");
 
       // Quality selection
-      if (is_numeric($quality))
+      if (is_numeric($quality) and isset($media[$quality]))
           $media = $media[$quality];
       else
         {
           $quality = strtolower($quality);
-          if ($quality == "high")
-              $quality = 0;
-          else if ($quality == "medium")
-              $quality = 1;
-          else if ($quality == "low")
-              $quality = 2;
-          while (true)
+          switch ($quality)
+          {
+              case "low":
+                  $quality = 2;
+                  break;
+              case "medium":
+                  $quality = 1;
+                  break;
+              default:
+                  $quality = 0;
+          }
+          while ($quality >= 0)
             {
-              $key = KeyName($media, $quality);
-              if ($key)
+              if ($key = KeyName($media, $quality))
                 {
                   $media = $media[$key];
                   break;
@@ -809,7 +813,7 @@
       $outFile = "Joined.flv";
   if ($outDir)
     {
-      $outDir = str_replace('\\', '/', $outDir);
+      $outDir = rtrim(str_replace('\\', '/', $outDir));
       if (substr($outDir, -1) != '/')
           $outDir = $outDir . '/';
       if (!file_exists($outDir))
@@ -860,7 +864,7 @@
   $AVC_HeaderWritten = false;
   $AAC_HeaderWritten = false;
   $timeStart         = microtime(true);
-  DebugLog("Joining Fragments:\n");
+  DebugLog("Joining Fragments:");
   for ($i = 1; $i <= $fragCount; $i++)
     {
       $fragLen = 0;
@@ -890,7 +894,7 @@
           continue;
         }
 
-      DebugLog(sprintf($format . "%-16s", "Type", "CurrentTS", "PreviousTS", "Size", "Position"));
+      DebugLog(sprintf("\nFragment %d:\n" . $format . "%-16s", $i, "Type", "CurrentTS", "PreviousTS", "Size", "Position"));
       while ($fragPos < $fragLen)
         {
           $packetType  = ReadByte($frag, $fragPos);
