@@ -132,7 +132,7 @@
           $this->headers[]   = 'Accept: image/gif, image/x-bitmap, image/jpeg, image/pjpeg';
           $this->headers[]   = 'Connection: Keep-Alive';
           $this->headers[]   = 'Content-type: application/x-www-form-urlencoded;charset=UTF-8';
-          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:13.0) Gecko/20100101 Firefox/13.0';
+          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:13.0) Gecko/20100101 Firefox/13.0.1';
           $this->compression = $compression;
           $this->proxy       = $proxy;
           $this->cookies     = $cookies;
@@ -245,10 +245,17 @@
           curl_setopt($download['ch'], CURLOPT_HTTPHEADER, $this->headers);
           curl_setopt($download['ch'], CURLOPT_HEADER, 0);
           curl_setopt($download['ch'], CURLOPT_USERAGENT, $this->user_agent);
-          curl_setopt($download['ch'], CURLOPT_FOLLOWLOCATION, 1);
+          if ($this->cookies == true)
+              curl_setopt($download['ch'], CURLOPT_COOKIEFILE, $this->cookie_file);
+          if ($this->cookies == true)
+              curl_setopt($download['ch'], CURLOPT_COOKIEJAR, $this->cookie_file);
+          curl_setopt($download['ch'], CURLOPT_ENCODING, $this->compression);
           curl_setopt($download['ch'], CURLOPT_TIMEOUT, 300);
           curl_setopt($download['ch'], CURLOPT_BINARYTRANSFER, 1);
           curl_setopt($download['ch'], CURLOPT_RETURNTRANSFER, 1);
+          curl_setopt($download['ch'], CURLOPT_FOLLOWLOCATION, 1);
+          if (!$this->cert_check)
+              curl_setopt($download['ch'], CURLOPT_SSL_VERIFYPEER, 0);
           curl_multi_add_handle($this->mh, $download['ch']);
           do
             {
