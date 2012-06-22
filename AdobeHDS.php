@@ -682,11 +682,21 @@
       ParseManifest($manifest);
       if (strncasecmp($media['url'], "http", 4) == 0)
         {
-          $baseUrl      = substr($media['url'], 0, strrpos($media['url'], '/'));
-          $baseFilename = substr($media['url'], strrpos($media['url'], '/') + 1) . "Seg1-Frag";
+          if (substr($media['url'], -1) == '/')
+              $baseFilename = substr($media['url'], 0, -1);
+          else
+              $baseFilename = $media['url'];
+          $baseFilename = substr($baseFilename, strrpos($baseFilename, '/') + 1) . "Seg1-Frag";
+          $fragUrl      = $media['url'] . "Seg1-Frag";
         }
       else
-          $baseFilename = $media['url'] . "Seg1-Frag";
+        {
+          if (substr($media['url'], -1) == '/')
+              $baseFilename = substr($media['url'], 0, -1) . "Seg1-Frag";
+          else
+              $baseFilename = $media['url'] . "Seg1-Frag";
+          $fragUrl = $baseUrl . "/" . $media['url'] . "Seg1-Frag";
+        }
       DebugLog("Downloading Fragments:\n");
 
       while (($fragNum < $fragCount) or $cc->active)
@@ -710,7 +720,7 @@
                   continue;
                 }
               DebugLog("Adding fragment $fragNum to download queue");
-              $cc->addDownload("$baseUrl/$baseFilename$fragNum$auth", "$baseFilename$fragNum");
+              $cc->addDownload("$fragUrl$fragNum$auth", "$baseFilename$fragNum");
             }
 
           $downloads = $cc->checkDownloads();
