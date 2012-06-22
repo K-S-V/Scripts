@@ -354,7 +354,7 @@
   function ReadString($frag, &$fragPos)
     {
       $strlen = 0;
-      while ($frag[$fragPos] != 0x00)
+      while ($frag[$fragPos + $strlen] != "\x00")
           $strlen++;
       $str = substr($frag, $fragPos, $strlen);
       $fragPos += $strlen + 1;
