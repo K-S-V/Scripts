@@ -508,7 +508,7 @@
 
   function ParseAsrtBox($asrt, $pos)
     {
-      global $fragCount;
+      global $fragCount, $segTable;
       $version           = ReadByte($asrt, $pos);
       $flags             = ReadInt24($asrt, $pos + 1);
       $qualityEntryCount = ReadByte($asrt, $pos + 4);
@@ -522,13 +522,15 @@
       DebugLog(sprintf("%s:\n\n %-8s%-10s", "Segment Entries", "Number", "Fragments"));
       for ($i = 0; $i < $segCount; $i++)
         {
-          $segTable[$i]['firstSegment']        = ReadInt32($asrt, $pos);
-          $segTable[$i]['fragmentsPerSegment'] = ReadInt32($asrt, $pos + 4);
+          $firstSegment = ReadInt32($asrt, $pos);
+          $segEntry =& $segTable[$firstSegment];
+          $segEntry['firstSegment']        = $firstSegment;
+          $segEntry['fragmentsPerSegment'] = ReadInt32($asrt, $pos + 4);
           $pos += 8;
-          DebugLog(sprintf(" %-8s%-10s", $segTable[$i]['firstSegment'], $segTable[$i]['fragmentsPerSegment']));
+          DebugLog(sprintf(" %-8s%-10s", $segEntry['firstSegment'], $segEntry['fragmentsPerSegment']));
         }
       DebugLog("");
-      $fragCount = $segTable[0]['fragmentsPerSegment'];
+      $fragCount = $segTable[1]['fragmentsPerSegment'];
     }
 
   function ParseAfrtBox($afrt, $pos)
@@ -548,14 +550,16 @@
       DebugLog(sprintf("%s:\n\n %-8s%-16s%-16s%-16s", "Fragment Entries", "Number", "Timestamp", "Duration", "Discontinuity"));
       for ($i = 0; $i < $fragCount; $i++)
         {
-          $fragTable[$i]['firstFragment']          = ReadInt32($afrt, $pos);
-          $fragTable[$i]['firstFragmentTimestamp'] = ReadInt32($afrt, $pos + 8);
-          $fragTable[$i]['fragmentDuration']       = ReadInt32($afrt, $pos + 12);
-          $fragTable[$i]['discontinuityIndicator'] = "";
+          $firstFragment = ReadInt32($afrt, $pos);
+          $fragEntry =& $fragTable[$firstFragment];
+          $fragEntry['firstFragment']          = $firstFragment;
+          $fragEntry['firstFragmentTimestamp'] = ReadInt32($afrt, $pos + 8);
+          $fragEntry['fragmentDuration']       = ReadInt32($afrt, $pos + 12);
+          $fragEntry['discontinuityIndicator'] = "";
           $pos += 16;
-          if ($fragTable[$i]['fragmentDuration'] == 0)
-              $fragTable[$i]['discontinuityIndicator'] = ReadByte($afrt, $pos++);
-          DebugLog(sprintf(" %-8s%-16s%-16s%-16s", $fragTable[$i]['firstFragment'], $fragTable[$i]['firstFragmentTimestamp'], $fragTable[$i]['fragmentDuration'], $fragTable[$i]['discontinuityIndicator']));
+          if ($fragEntry['fragmentDuration'] == 0)
+              $fragEntry['discontinuityIndicator'] = ReadByte($afrt, $pos++);
+          DebugLog(sprintf(" %-8s%-16s%-16s%-16s", $fragEntry['firstFragment'], $fragEntry['firstFragmentTimestamp'], $fragEntry['fragmentDuration'], $fragEntry['discontinuityIndicator']));
         }
       DebugLog("");
     }
@@ -706,13 +710,11 @@
               $fragNum += 1;
               echo "Downloading $fragNum/$fragCount fragments\r";
               if (in_array_field($fragNum, "firstFragment", $fragTable, true))
-                {
                   $discontinuity = value_in_array_field($fragNum, "firstFragment", "discontinuityIndicator", $fragTable, true);
-                  if (($discontinuity == 1) or ($discontinuity == 3))
-                    {
-                      $rename = true;
-                      continue;
-                    }
+              if (($discontinuity == 1) or ($discontinuity == 3))
+                {
+                  $rename = true;
+                  continue;
                 }
               if (file_exists("$baseFilename$fragNum"))
                 {
