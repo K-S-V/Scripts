@@ -314,23 +314,535 @@
         }
     }
 
-  function ShowHeader($header)
+  class F4F
     {
-      $len    = strlen($header);
-      $width  = (int) ((80 - $len) / 2) + $len;
-      $format = "\n%" . $width . "s\n\n";
-      printf($format, $header);
-    }
+      var $auth, $baseFilename, $baseUrl, $debug, $format, $media, $parallel, $quality, $rename;
+      var $prevTagSize, $tagHeaderLen;
+      var $segTable, $fragTable, $fragCount;
+      var $prevAudioTS, $prevVideoTS, $pAudioTagLen, $pVideoTagLen, $pAudioTagPos, $pVideoTagPos;
+      var $prevAVC_Header, $prevAAC_Header, $AVC_HeaderWritten, $AAC_HeaderWritten;
 
-  function KeyName(array $a, $pos)
-    {
-      $temp = array_slice($a, $pos, 1, true);
-      return key($temp);
-    }
+      public function __construct()
+        {
+          $this->auth              = "";
+          $this->baseFilename      = "";
+          $this->debug             = false;
+          $this->format            = "";
+          $this->parallel          = 8;
+          $this->quality           = "high";
+          $this->rename            = false;
+          $this->prevTagSize       = 4;
+          $this->tagHeaderLen      = 11;
+          $this->prevAudioTS       = -1;
+          $this->prevVideoTS       = -1;
+          $this->pAudioTagLen      = 0;
+          $this->pVideoTagLen      = 0;
+          $this->pAudioTagPos      = 0;
+          $this->pVideoTagPos      = 0;
+          $this->prevAVC_Header    = false;
+          $this->prevAAC_Header    = false;
+          $this->AVC_HeaderWritten = false;
+          $this->AAC_HeaderWritten = false;
+        }
 
-  function GetString($xmlObject)
-    {
-      return trim((string) $xmlObject);
+      function ParseManifest($cc, $manifest)
+        {
+          $status = $cc->get($manifest);
+          if ($status == 403)
+              die("Access Denied! Unable to download manifest.");
+          else if ($status != 200)
+              die("Unable to download manifest");
+          $xml       = simplexml_load_string($cc->response);
+          $namespace = $xml->getDocNamespaces();
+          $namespace = $namespace[''];
+          $xml->registerXPathNamespace("ns", $namespace);
+          $streams = $xml->xpath("/ns:manifest/ns:media");
+          foreach ($streams as $stream)
+            {
+              $bitrate   = isset($stream['bitrate']) ? (int) $stream['bitrate'] : 1;
+              $streamId  = GetString($stream['streamId']);
+              $bootstrap = $xml->xpath("/ns:manifest/ns:bootstrapInfo[@id='" . $stream['bootstrapInfoId'] . "']");
+              if (isset($bootstrap[0]['url']))
+                {
+                  $bootstrapUrl = $xml->xpath("/ns:manifest/ns:bootstrapInfo[@id='" . $stream['bootstrapInfoId'] . "']/@url");
+                  $bootstrapUrl = GetString($bootstrapUrl[0]['url']);
+                  if (strncasecmp($bootstrapUrl, "http", 4) == 0)
+                      $cc->get($bootstrapUrl);
+                  else
+                      $cc->get("$this->baseUrl/$bootstrapUrl");
+                  $this->media[$bitrate]['bootstrap'] = $cc->response;
+                }
+              else
+                  $this->media[$bitrate]['bootstrap'] = base64_decode(GetString($bootstrap[0]));
+              $metadata = $xml->xpath("/ns:manifest/ns:media[@streamId='" . $streamId . "']/ns:metadata");
+              if (isset($metadata[0]))
+                  $this->media[$bitrate]['metadata'] = GetString($metadata[0]);
+              else
+                  $this->media[$bitrate]['metadata'] = "";
+              $this->media[$bitrate]['url'] = GetString($stream['url']);
+            }
+
+          // Available qualities
+          krsort($this->media, SORT_NUMERIC);
+          DebugLog("Manifest Entries:\n");
+          DebugLog(sprintf(" %-8s%s", "Bitrate", "URL"));
+          for ($i = 0; $i < count($this->media); $i++)
+            {
+              $key = KeyName($this->media, $i);
+              DebugLog(sprintf(" %-8d%s", $key, $this->media[$key]['url']));
+            }
+          DebugLog("");
+
+          // Quality selection
+          if (is_numeric($this->quality) and isset($this->media[$this->quality]))
+              $this->media = $this->media[$this->quality];
+          else
+            {
+              $this->quality = strtolower($this->quality);
+              switch ($this->quality)
+              {
+                  case "low":
+                      $this->quality = 2;
+                      break;
+                  case "medium":
+                      $this->quality = 1;
+                      break;
+                  default:
+                      $this->quality = 0;
+              }
+              while ($this->quality >= 0)
+                {
+                  if ($key = KeyName($this->media, $this->quality))
+                    {
+                      $this->media = $this->media[$key];
+                      break;
+                    }
+                  else
+                      $this->quality -= 1;
+                }
+            }
+
+          $bootstrapInfo = $this->media['bootstrap'];
+          ReadBoxHeader($bootstrapInfo, $pos, $boxType, $boxSize);
+          if ($boxType == "abst")
+              $this->ParseBootstrapBox($bootstrapInfo, $pos);
+          else
+              die("Failed to parse bootstrap info");
+        }
+
+      function ParseBootstrapBox($bootstrapInfo, $pos)
+        {
+          $version             = ReadByte($bootstrapInfo, $pos);
+          $flags               = ReadInt24($bootstrapInfo, $pos + 1);
+          $bootstrapVersion    = ReadInt32($bootstrapInfo, $pos + 4);
+          $byte                = ReadByte($bootstrapInfo, $pos + 8);
+          $profile             = ($byte & 0xC0) >> 6;
+          $live                = ($byte & 0x20) >> 5;
+          $update              = ($byte & 0x10) >> 4;
+          $timescale           = ReadInt32($bootstrapInfo, $pos + 9);
+          $currentMediaTime    = ReadInt32($bootstrapInfo, 17);
+          $smpteTimeCodeOffset = ReadInt32($bootstrapInfo, 25);
+          $pos += 29;
+          $movieIdentifier  = ReadString($bootstrapInfo, $pos);
+          $serverEntryCount = ReadByte($bootstrapInfo, $pos++);
+          for ($i = 0; $i < $serverEntryCount; $i++)
+              $serverEntryTable[$i] = ReadString($bootstrapInfo, $pos);
+          $qualityEntryCount = ReadByte($bootstrapInfo, $pos++);
+          for ($i = 0; $i < $qualityEntryCount; $i++)
+              $qualityEntryTable[$i] = ReadString($bootstrapInfo, $pos);
+          $drmData          = ReadString($bootstrapInfo, $pos);
+          $metadata         = ReadString($bootstrapInfo, $pos);
+          $segRunTableCount = ReadByte($bootstrapInfo, $pos++);
+          for ($i = 0; $i < $segRunTableCount; $i++)
+            {
+              ReadBoxHeader($bootstrapInfo, $pos, $boxType, $boxSize);
+              if ($boxType == "asrt")
+                  $this->ParseAsrtBox($bootstrapInfo, $pos);
+              $pos += $boxSize;
+            }
+          $fragRunTableCount = ReadByte($bootstrapInfo, $pos++);
+          for ($i = 0; $i < $fragRunTableCount; $i++)
+            {
+              ReadBoxHeader($bootstrapInfo, $pos, $boxType, $boxSize);
+              if ($boxType == "afrt")
+                  $this->ParseAfrtBox($bootstrapInfo, $pos);
+              $pos += $boxSize;
+            }
+        }
+
+      function ParseAsrtBox($asrt, $pos)
+        {
+          $version           = ReadByte($asrt, $pos);
+          $flags             = ReadInt24($asrt, $pos + 1);
+          $qualityEntryCount = ReadByte($asrt, $pos + 4);
+          $pos += 5;
+          for ($i = 0; $i < $qualityEntryCount; $i++)
+            {
+              $qualitySegmentUrlModifiers[$i] = ReadString($asrt, $pos);
+            }
+          $segCount = ReadInt32($asrt, $pos);
+          $pos += 4;
+          DebugLog(sprintf("%s:\n\n %-8s%-10s", "Segment Entries", "Number", "Fragments"));
+          for ($i = 0; $i < $segCount; $i++)
+            {
+              $firstSegment = ReadInt32($asrt, $pos);
+              $segEntry =& $this->segTable[$firstSegment];
+              $segEntry['firstSegment']        = $firstSegment;
+              $segEntry['fragmentsPerSegment'] = ReadInt32($asrt, $pos + 4);
+              $pos += 8;
+              DebugLog(sprintf(" %-8s%-10s", $segEntry['firstSegment'], $segEntry['fragmentsPerSegment']));
+            }
+          DebugLog("");
+          $this->fragCount = $this->segTable[1]['fragmentsPerSegment'];
+        }
+
+      function ParseAfrtBox($afrt, $pos)
+        {
+          $version           = ReadByte($afrt, $pos);
+          $flags             = ReadInt24($afrt, $pos + 1);
+          $timescale         = ReadInt32($afrt, $pos + 4);
+          $qualityEntryCount = ReadByte($afrt, $pos + 8);
+          $pos += 9;
+          for ($i = 0; $i < $qualityEntryCount; $i++)
+            {
+              $qualitySegmentUrlModifiers[$i] = ReadString($afrt, $pos);
+            }
+          $fragCount = ReadInt32($afrt, $pos);
+          $pos += 4;
+          DebugLog(sprintf("%s:\n\n %-8s%-16s%-16s%-16s", "Fragment Entries", "Number", "Timestamp", "Duration", "Discontinuity"));
+          for ($i = 0; $i < $fragCount; $i++)
+            {
+              $firstFragment = ReadInt32($afrt, $pos);
+              $fragEntry =& $this->fragTable[$firstFragment];
+              $fragEntry['firstFragment']          = $firstFragment;
+              $fragEntry['firstFragmentTimestamp'] = ReadInt32($afrt, $pos + 8);
+              $fragEntry['fragmentDuration']       = ReadInt32($afrt, $pos + 12);
+              $fragEntry['discontinuityIndicator'] = "";
+              $pos += 16;
+              if ($fragEntry['fragmentDuration'] == 0)
+                  $fragEntry['discontinuityIndicator'] = ReadByte($afrt, $pos++);
+              DebugLog(sprintf(" %-8s%-16s%-16s%-16s", $fragEntry['firstFragment'], $fragEntry['firstFragmentTimestamp'], $fragEntry['fragmentDuration'], $fragEntry['discontinuityIndicator']));
+            }
+          DebugLog("");
+        }
+
+      function DownloadFragments($cc, $manifest)
+        {
+          $fragNum = 0;
+          if (strpos($manifest, '?') !== false)
+            {
+              $this->baseUrl = substr($manifest, 0, strpos($manifest, '?'));
+              $this->baseUrl = substr($this->baseUrl, 0, strrpos($this->baseUrl, '/'));
+            }
+          else
+              $this->baseUrl = substr($manifest, 0, strrpos($manifest, '/'));
+          $this->ParseManifest($cc, $manifest);
+          if (strncasecmp($this->media['url'], "http", 4) == 0)
+            {
+              if (substr($this->media['url'], -1) == '/')
+                  $this->baseFilename = substr($this->media['url'], 0, -1);
+              else
+                  $this->baseFilename = $this->media['url'];
+              $this->baseFilename = substr($this->baseFilename, strrpos($this->baseFilename, '/') + 1) . "Seg1-Frag";
+              $fragUrl            = $this->media['url'] . "Seg1-Frag";
+            }
+          else
+            {
+              if (substr($this->media['url'], -1) == '/')
+                  $this->baseFilename = substr($this->media['url'], 0, -1) . "Seg1-Frag";
+              else
+                  $this->baseFilename = $this->media['url'] . "Seg1-Frag";
+              $fragUrl = $this->baseUrl . "/" . $this->media['url'] . "Seg1-Frag";
+            }
+          $GLOBALS['baseFilename'] = $this->baseFilename;
+          DebugLog("Downloading Fragments:\n");
+
+          while (($fragNum < $this->fragCount) or $cc->active)
+            {
+              while ((count($cc->ch) < $this->parallel) and ($fragNum < $this->fragCount))
+                {
+                  $fragNum += 1;
+                  echo "Downloading $fragNum/$this->fragCount fragments\r";
+                  if (in_array_field($fragNum, "firstFragment", $this->fragTable, true))
+                      $discontinuity = value_in_array_field($fragNum, "firstFragment", "discontinuityIndicator", $this->fragTable, true);
+                  if (($discontinuity == 1) or ($discontinuity == 3))
+                    {
+                      $this->rename = true;
+                      continue;
+                    }
+                  if (file_exists("$this->baseFilename$fragNum"))
+                    {
+                      DebugLog("Fragment $fragNum is already downloaded");
+                      continue;
+                    }
+                  DebugLog("Adding fragment $fragNum to download queue");
+                  $cc->addDownload("$fragUrl$fragNum$this->auth", "$this->baseFilename$fragNum");
+                }
+
+              $downloads = $cc->checkDownloads();
+              if ($downloads !== false)
+                {
+                  foreach ($downloads as $download)
+                    {
+                      if ($download['status'] == 200)
+                        {
+                          if ($this->VerifyFragment($download['response']))
+                            {
+                              DebugLog("Fragment " . $download['id'] . " successfully downloaded");
+                              file_put_contents($download['id'], $download['response']);
+                            }
+                          else
+                            {
+                              DebugLog("Fragment " . $download['id'] . " failed to verify");
+                              DebugLog("Adding fragment " . $download['id'] . " to download queue");
+                              $cc->addDownload($download['url'], $download['id']);
+                            }
+                        }
+                      else if ($download['status'] == 403)
+                          die("Access Denied! Unable to download fragments.");
+                      else if ($download['status'] === false)
+                        {
+                          DebugLog("Fragment " . $download['id'] . " failed to download");
+                          DebugLog("Adding fragment " . $download['id'] . " to download queue");
+                          $cc->addDownload($download['url'], $download['id']);
+                        }
+                      else
+                        {
+                          DebugLog("Fragment " . $download['id'] . " doesn't exist");
+                          $this->rename = true;
+                        }
+                    }
+                }
+              usleep(50000);
+            }
+
+          echo "\n";
+          DebugLog("\nAll fragments downloaded successfully\n");
+          $cc->stopDownloads();
+        }
+
+      function VerifyFragment($frag)
+        {
+          $fragPos = 0;
+          $fragLen = strlen($frag);
+          while ($fragPos < $fragLen)
+            {
+              ReadBoxHeader($frag, $fragPos, $boxType, $boxSize);
+              if ($boxType == "mdat")
+                {
+                  $frag    = substr($frag, $fragPos, $boxSize);
+                  $fragLen = strlen($frag);
+                  if ($fragLen == $boxSize)
+                      return true;
+                  else
+                      return false;
+                }
+              $fragPos += $boxSize;
+            }
+          return false;
+        }
+
+      function RenameFragments($baseFilename, $fileExt)
+        {
+          $files     = array();
+          $fragCount = 0;
+          $retries   = 0;
+
+          if (!file_exists($baseFilename . ($fragCount + 1) . $fileExt))
+              $fileExt = "";
+          while (true)
+            {
+              if ($retries >= 50)
+                  break;
+              $file = $baseFilename . ++$fragCount . $fileExt;
+              if (file_exists($file))
+                {
+                  $files[] = $file;
+                  $retries = 0;
+                }
+              else
+                  $retries++;
+            }
+
+          $fragCount = count($files);
+          natsort($files);
+          for ($i = 0; $i < $fragCount; $i++)
+              rename($files[$i], $baseFilename . ($i + 1) . $fileExt);
+        }
+
+      function WriteMetadata($flv = false)
+        {
+          if (isset($this->media) and $this->media['metadata'])
+            {
+              $this->media['metadata'] = base64_decode($this->media['metadata']);
+              $metadataSize            = strlen($this->media['metadata']);
+              WriteByte($metadata, 0, SCRIPT_DATA);
+              WriteInt24($metadata, 1, $metadataSize);
+              WriteInt24($metadata, 4, 0);
+              WriteInt32($metadata, 7, 0);
+              $metadata = implode("", $metadata) . $this->media['metadata'];
+              WriteByte($metadata, $this->tagHeaderLen + $metadataSize - 1, 0x09);
+              WriteInt32($metadata, $this->tagHeaderLen + $metadataSize, $this->tagHeaderLen + $metadataSize);
+              if ($flv)
+                  fwrite($flv, $metadata, $this->tagHeaderLen + $metadataSize + $this->prevTagSize);
+              else
+                  return $metadata;
+            }
+        }
+
+      function DecodeFragment($frag, $fragPos, $fragLen, $fragNum, $flv = false)
+        {
+          $flvData = "";
+          DebugLog(sprintf("\nFragment %d:\n" . $this->format . "%-16s", $fragNum, "Type", "CurrentTS", "PreviousTS", "Size", "Position"));
+          while ($fragPos < $fragLen)
+            {
+              $packetType  = ReadByte($frag, $fragPos);
+              $packetSize  = ReadInt24($frag, $fragPos + 1);
+              $packetTS    = ReadInt24($frag, $fragPos + 4);
+              $packetTS    = $packetTS | (ReadByte($frag, $fragPos + 7) << 24);
+              $totalTagLen = $this->tagHeaderLen + $packetSize + $this->prevTagSize;
+              switch ($packetType)
+              {
+                  case AUDIO:
+                      if ($packetTS >= $this->prevAudioTS - TIMECODE_DURATION * 5)
+                        {
+                          $FrameInfo = ReadByte($frag, $fragPos + $this->tagHeaderLen);
+                          $CodecID   = ($FrameInfo & 0xF0) >> 4;
+                          if ($CodecID == CODEC_ID_AAC)
+                            {
+                              $AAC_PacketType = ReadByte($frag, $fragPos + $this->tagHeaderLen + 1);
+                              if ($AAC_PacketType == AAC_SEQUENCE_HEADER)
+                                {
+                                  if ($this->AAC_HeaderWritten)
+                                    {
+                                      DebugLog(sprintf("%s\n" . $this->format, "Skipping AAC sequence header", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize));
+                                      break;
+                                    }
+                                  else
+                                    {
+                                      DebugLog("Writing AAC sequence header");
+                                      $this->AAC_HeaderWritten = true;
+                                      $this->prevAAC_Header    = true;
+                                    }
+                                }
+                              else if (!$this->AAC_HeaderWritten)
+                                {
+                                  DebugLog(sprintf("%s\n" . $this->format, "Discarding audio packet received before AAC sequence header", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize));
+                                  break;
+                                }
+                            }
+                          if ($packetSize > 0)
+                            {
+                              // Check for packets with non-monotonic audio timestamps and fix them
+                              if (!$this->prevAAC_Header and ($packetTS <= $this->prevAudioTS))
+                                {
+                                  $packetTS += TIMECODE_DURATION + ($this->prevAudioTS - $packetTS);
+                                  WriteInt24($frag, $fragPos + 4, ($packetTS & 0x00FFFFFF));
+                                  WriteByte($frag, $fragPos + 7, ($packetTS & 0xFF000000) >> 24);
+                                  DebugLog(sprintf("%s\n" . $this->format, "Fixing audio timestamp", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize));
+                                }
+                              if (($CodecID == CODEC_ID_AAC) and ($AAC_PacketType != AAC_SEQUENCE_HEADER))
+                                  $this->prevAAC_Header = false;
+                              if ($flv)
+                                {
+                                  $pAudioTagPos = ftell($flv);
+                                  fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
+                                  if ($this->debug)
+                                      DebugLog(sprintf($this->format . "%-16s", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize, $pAudioTagPos));
+                                }
+                              else
+                                {
+                                  $flvData .= substr($frag, $fragPos, $totalTagLen);
+                                  if ($this->debug)
+                                      DebugLog(sprintf($this->format, "AUDIO", $packetTS, $this->prevAudioTS, $packetSize));
+                                }
+                              $this->prevAudioTS = $packetTS;
+                              $pAudioTagLen      = $totalTagLen;
+                            }
+                          else
+                              DebugLog(sprintf("%s\n" . $this->format, "Skipping small sized audio packet", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize));
+                        }
+                      else
+                          DebugLog(sprintf("%s\n" . $this->format, "Skipping audio packet in fragment $fragNum", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize));
+                      break;
+                  case VIDEO:
+                      if ($packetTS >= $this->prevVideoTS - TIMECODE_DURATION * 5)
+                        {
+                          $FrameInfo = ReadByte($frag, $fragPos + $this->tagHeaderLen);
+                          $FrameType = ($FrameInfo & 0xF0) >> 4;
+                          $CodecID   = $FrameInfo & 0x0F;
+                          if ($FrameType == FRAME_TYPE_INFO)
+                            {
+                              DebugLog(sprintf("%s\n" . $this->format, "Skipping video info frame", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
+                              break;
+                            }
+                          if ($CodecID == CODEC_ID_AVC)
+                            {
+                              $AVC_PacketType = ReadByte($frag, $fragPos + $this->tagHeaderLen + 1);
+                              if ($AVC_PacketType == AVC_SEQUENCE_HEADER)
+                                {
+                                  if ($this->AVC_HeaderWritten)
+                                    {
+                                      DebugLog(sprintf("%s\n" . $this->format, "Skipping AVC sequence header", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
+                                      break;
+                                    }
+                                  else
+                                    {
+                                      DebugLog("Writing AVC sequence header");
+                                      $this->AVC_HeaderWritten = true;
+                                      $this->prevAVC_Header    = true;
+                                    }
+                                }
+                              else if (!$this->AVC_HeaderWritten)
+                                {
+                                  DebugLog(sprintf("%s\n" . $this->format, "Discarding video packet received before AVC sequence header", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
+                                  break;
+                                }
+                            }
+                          if ($packetSize > 0)
+                            {
+                              // Check for packets with non-monotonic video timestamps and fix them
+                              if (!$this->prevAVC_Header and (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType != AVC_SEQUENCE_END)) and ($packetTS <= $this->prevVideoTS))
+                                {
+                                  $packetTS += TIMECODE_DURATION + ($this->prevVideoTS - $packetTS);
+                                  WriteInt24($frag, $fragPos + 4, ($packetTS & 0x00FFFFFF));
+                                  WriteByte($frag, $fragPos + 7, ($packetTS & 0xFF000000) >> 24);
+                                  DebugLog(sprintf("%s\n" . $this->format, "Fixing video timestamp", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
+                                }
+                              if (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType != AVC_SEQUENCE_HEADER))
+                                  $this->prevAVC_Header = false;
+                              if ($flv)
+                                {
+                                  $pVideoTagPos = ftell($flv);
+                                  fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
+                                  if ($this->debug)
+                                      DebugLog(sprintf($this->format . "%-16s", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize, $pVideoTagPos));
+                                }
+                              else
+                                {
+                                  $flvData .= substr($frag, $fragPos, $totalTagLen);
+                                  if ($this->debug)
+                                      DebugLog(sprintf($this->format, "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
+                                }
+                              $this->prevVideoTS = $packetTS;
+                              $pVideoTagLen      = $totalTagLen;
+                            }
+                          else
+                              DebugLog(sprintf("%s\n" . $this->format, "Skipping small sized video packet", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
+                        }
+                      else
+                          DebugLog(sprintf("%s\n" . $this->format, "Skipping video packet in fragment $fragNum", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
+                      break;
+                  case SCRIPT_DATA:
+                      break;
+                  default:
+                      die(sprintf("Unknown packet type %s encountered! Encrypted fragments can't be recovered.", $packetType));
+              }
+              $fragPos += $totalTagLen;
+            }
+          if (!$flv)
+              return $flvData;
+        }
     }
 
   function ReadByte($str, $pos)
@@ -404,32 +916,23 @@
           fwrite(STDERR, $msg . "\n");
     }
 
-  function RenameFragments($baseFilename, $fileExt)
+  function GetString($xmlObject)
     {
-      $files     = array();
-      $fragCount = 0;
-      $retries   = 0;
+      return trim((string) $xmlObject);
+    }
 
-      if (!file_exists($baseFilename . ($fragCount + 1) . $fileExt))
-          $fileExt = "";
-      while (true)
-        {
-          if ($retries >= 50)
-              break;
-          $file = $baseFilename . ++$fragCount . $fileExt;
-          if (file_exists($file))
-            {
-              $files[] = $file;
-              $retries = 0;
-            }
-          else
-              $retries++;
-        }
+  function KeyName(array $a, $pos)
+    {
+      $temp = array_slice($a, $pos, 1, true);
+      return key($temp);
+    }
 
-      $fragCount = count($files);
-      natsort($files);
-      for ($i = 0; $i < $fragCount; $i++)
-          rename($files[$i], $baseFilename . ($i + 1) . $fileExt);
+  function ShowHeader($header)
+    {
+      $len    = strlen($header);
+      $width  = (int) ((80 - $len) / 2) + $len;
+      $format = "\n%" . $width . "s\n\n";
+      printf($format, $header);
     }
 
   function in_array_field($needle, $needle_field, $haystack, $strict = false)
@@ -466,360 +969,58 @@
       return false;
     }
 
-  function ParseBootstrapBox($bootstrapInfo, $pos)
-    {
-      $version             = ReadByte($bootstrapInfo, $pos);
-      $flags               = ReadInt24($bootstrapInfo, $pos + 1);
-      $bootstrapVersion    = ReadInt32($bootstrapInfo, $pos + 4);
-      $byte                = ReadByte($bootstrapInfo, $pos + 8);
-      $profile             = ($byte & 0xC0) >> 6;
-      $live                = ($byte & 0x20) >> 5;
-      $update              = ($byte & 0x10) >> 4;
-      $timescale           = ReadInt32($bootstrapInfo, $pos + 9);
-      $currentMediaTime    = ReadInt32($bootstrapInfo, 17);
-      $smpteTimeCodeOffset = ReadInt32($bootstrapInfo, 25);
-      $pos += 29;
-      $movieIdentifier  = ReadString($bootstrapInfo, $pos);
-      $serverEntryCount = ReadByte($bootstrapInfo, $pos++);
-      for ($i = 0; $i < $serverEntryCount; $i++)
-          $serverEntryTable[$i] = ReadString($bootstrapInfo, $pos);
-      $qualityEntryCount = ReadByte($bootstrapInfo, $pos++);
-      for ($i = 0; $i < $qualityEntryCount; $i++)
-          $qualityEntryTable[$i] = ReadString($bootstrapInfo, $pos);
-      $drmData          = ReadString($bootstrapInfo, $pos);
-      $metadata         = ReadString($bootstrapInfo, $pos);
-      $segRunTableCount = ReadByte($bootstrapInfo, $pos++);
-      for ($i = 0; $i < $segRunTableCount; $i++)
-        {
-          ReadBoxHeader($bootstrapInfo, $pos, $boxType, $boxSize);
-          if ($boxType == "asrt")
-              ParseAsrtBox($bootstrapInfo, $pos);
-          $pos += $boxSize;
-        }
-      $fragRunTableCount = ReadByte($bootstrapInfo, $pos++);
-      for ($i = 0; $i < $fragRunTableCount; $i++)
-        {
-          ReadBoxHeader($bootstrapInfo, $pos, $boxType, $boxSize);
-          if ($boxType == "afrt")
-              ParseAfrtBox($bootstrapInfo, $pos);
-          $pos += $boxSize;
-        }
-    }
-
-  function ParseAsrtBox($asrt, $pos)
-    {
-      global $fragCount, $segTable;
-      $version           = ReadByte($asrt, $pos);
-      $flags             = ReadInt24($asrt, $pos + 1);
-      $qualityEntryCount = ReadByte($asrt, $pos + 4);
-      $pos += 5;
-      for ($i = 0; $i < $qualityEntryCount; $i++)
-        {
-          $qualitySegmentUrlModifiers[$i] = ReadString($asrt, $pos);
-        }
-      $segCount = ReadInt32($asrt, $pos);
-      $pos += 4;
-      DebugLog(sprintf("%s:\n\n %-8s%-10s", "Segment Entries", "Number", "Fragments"));
-      for ($i = 0; $i < $segCount; $i++)
-        {
-          $firstSegment = ReadInt32($asrt, $pos);
-          $segEntry =& $segTable[$firstSegment];
-          $segEntry['firstSegment']        = $firstSegment;
-          $segEntry['fragmentsPerSegment'] = ReadInt32($asrt, $pos + 4);
-          $pos += 8;
-          DebugLog(sprintf(" %-8s%-10s", $segEntry['firstSegment'], $segEntry['fragmentsPerSegment']));
-        }
-      DebugLog("");
-      $fragCount = $segTable[1]['fragmentsPerSegment'];
-    }
-
-  function ParseAfrtBox($afrt, $pos)
-    {
-      global $fragTable;
-      $version           = ReadByte($afrt, $pos);
-      $flags             = ReadInt24($afrt, $pos + 1);
-      $timescale         = ReadInt32($afrt, $pos + 4);
-      $qualityEntryCount = ReadByte($afrt, $pos + 8);
-      $pos += 9;
-      for ($i = 0; $i < $qualityEntryCount; $i++)
-        {
-          $qualitySegmentUrlModifiers[$i] = ReadString($afrt, $pos);
-        }
-      $fragCount = ReadInt32($afrt, $pos);
-      $pos += 4;
-      DebugLog(sprintf("%s:\n\n %-8s%-16s%-16s%-16s", "Fragment Entries", "Number", "Timestamp", "Duration", "Discontinuity"));
-      for ($i = 0; $i < $fragCount; $i++)
-        {
-          $firstFragment = ReadInt32($afrt, $pos);
-          $fragEntry =& $fragTable[$firstFragment];
-          $fragEntry['firstFragment']          = $firstFragment;
-          $fragEntry['firstFragmentTimestamp'] = ReadInt32($afrt, $pos + 8);
-          $fragEntry['fragmentDuration']       = ReadInt32($afrt, $pos + 12);
-          $fragEntry['discontinuityIndicator'] = "";
-          $pos += 16;
-          if ($fragEntry['fragmentDuration'] == 0)
-              $fragEntry['discontinuityIndicator'] = ReadByte($afrt, $pos++);
-          DebugLog(sprintf(" %-8s%-16s%-16s%-16s", $fragEntry['firstFragment'], $fragEntry['firstFragmentTimestamp'], $fragEntry['fragmentDuration'], $fragEntry['discontinuityIndicator']));
-        }
-      DebugLog("");
-    }
-
-  function ParseManifest($manifest)
-    {
-      global $baseUrl, $cc, $media, $quality;
-      $status = $cc->get($manifest);
-      if ($status == 403)
-          die("Access Denied! Unable to download manifest.");
-      else if ($status != 200)
-          die("Unable to download manifest");
-      $xml       = simplexml_load_string($cc->response);
-      $namespace = $xml->getDocNamespaces();
-      $namespace = $namespace[''];
-      $xml->registerXPathNamespace("ns", $namespace);
-      $streams = $xml->xpath("/ns:manifest/ns:media");
-      foreach ($streams as $stream)
-        {
-          $bitrate   = isset($stream['bitrate']) ? (int) $stream['bitrate'] : 1;
-          $streamId  = GetString($stream['streamId']);
-          $bootstrap = $xml->xpath("/ns:manifest/ns:bootstrapInfo[@id='" . $stream['bootstrapInfoId'] . "']");
-          if (isset($bootstrap[0]['url']))
-            {
-              $bootstrapUrl = $xml->xpath("/ns:manifest/ns:bootstrapInfo[@id='" . $stream['bootstrapInfoId'] . "']/@url");
-              $bootstrapUrl = GetString($bootstrapUrl[0]['url']);
-              if (strncasecmp($bootstrapUrl, "http", 4) == 0)
-                  $cc->get($bootstrapUrl);
-              else
-                  $cc->get("$baseUrl/$bootstrapUrl");
-              $media[$bitrate]['bootstrap'] = $cc->response;
-            }
-          else
-              $media[$bitrate]['bootstrap'] = base64_decode(GetString($bootstrap[0]));
-          $metadata = $xml->xpath("/ns:manifest/ns:media[@streamId='" . $streamId . "']/ns:metadata");
-          if (isset($metadata[0]))
-              $media[$bitrate]['metadata'] = GetString($metadata[0]);
-          else
-              $media[$bitrate]['metadata'] = "";
-          $media[$bitrate]['url'] = GetString($stream['url']);
-        }
-
-      // Available qualities
-      krsort($media, SORT_NUMERIC);
-      DebugLog("Manifest Entries:\n");
-      DebugLog(sprintf(" %-8s%s", "Bitrate", "URL"));
-      for ($i = 0; $i < count($media); $i++)
-        {
-          $key = KeyName($media, $i);
-          DebugLog(sprintf(" %-8d%s", $key, $media[$key]['url']));
-        }
-      DebugLog("");
-
-      // Quality selection
-      if (is_numeric($quality) and isset($media[$quality]))
-          $media = $media[$quality];
-      else
-        {
-          $quality = strtolower($quality);
-          switch ($quality)
-          {
-              case "low":
-                  $quality = 2;
-                  break;
-              case "medium":
-                  $quality = 1;
-                  break;
-              default:
-                  $quality = 0;
-          }
-          while ($quality >= 0)
-            {
-              if ($key = KeyName($media, $quality))
-                {
-                  $media = $media[$key];
-                  break;
-                }
-              else
-                  $quality -= 1;
-            }
-        }
-
-      $bootstrapInfo = $media['bootstrap'];
-      ReadBoxHeader($bootstrapInfo, $pos, $boxType, $boxSize);
-      if ($boxType == "abst")
-          ParseBootstrapBox($bootstrapInfo, $pos);
-      else
-          die("Failed to parse bootstrap info");
-    }
-
-  function VerifyFragment($frag)
-    {
-      $fragPos = 0;
-      $fragLen = strlen($frag);
-      while ($fragPos < $fragLen)
-        {
-          ReadBoxHeader($frag, $fragPos, $boxType, $boxSize);
-          if ($boxType == "mdat")
-            {
-              $frag    = substr($frag, $fragPos, $boxSize);
-              $fragLen = strlen($frag);
-              if ($fragLen == $boxSize)
-                  return true;
-              else
-                  return false;
-            }
-          $fragPos += $boxSize;
-        }
-      return false;
-    }
-
-  function DownloadFragments($manifest)
-    {
-      global $auth, $baseFilename, $baseUrl, $cc, $fragCount, $fragTable, $media, $parallel, $rename;
-      $fragNum = 0;
-
-      if (strpos($manifest, '?') !== false)
-        {
-          $baseUrl = substr($manifest, 0, strpos($manifest, '?'));
-          $baseUrl = substr($baseUrl, 0, strrpos($baseUrl, '/'));
-        }
-      else
-          $baseUrl = substr($manifest, 0, strrpos($manifest, '/'));
-      ParseManifest($manifest);
-      if (strncasecmp($media['url'], "http", 4) == 0)
-        {
-          if (substr($media['url'], -1) == '/')
-              $baseFilename = substr($media['url'], 0, -1);
-          else
-              $baseFilename = $media['url'];
-          $baseFilename = substr($baseFilename, strrpos($baseFilename, '/') + 1) . "Seg1-Frag";
-          $fragUrl      = $media['url'] . "Seg1-Frag";
-        }
-      else
-        {
-          if (substr($media['url'], -1) == '/')
-              $baseFilename = substr($media['url'], 0, -1) . "Seg1-Frag";
-          else
-              $baseFilename = $media['url'] . "Seg1-Frag";
-          $fragUrl = $baseUrl . "/" . $media['url'] . "Seg1-Frag";
-        }
-      DebugLog("Downloading Fragments:\n");
-
-      while (($fragNum < $fragCount) or $cc->active)
-        {
-          while ((count($cc->ch) < $parallel) and ($fragNum < $fragCount))
-            {
-              $fragNum += 1;
-              echo "Downloading $fragNum/$fragCount fragments\r";
-              if (in_array_field($fragNum, "firstFragment", $fragTable, true))
-                  $discontinuity = value_in_array_field($fragNum, "firstFragment", "discontinuityIndicator", $fragTable, true);
-              if (($discontinuity == 1) or ($discontinuity == 3))
-                {
-                  $rename = true;
-                  continue;
-                }
-              if (file_exists("$baseFilename$fragNum"))
-                {
-                  DebugLog("Fragment $fragNum is already downloaded");
-                  continue;
-                }
-              DebugLog("Adding fragment $fragNum to download queue");
-              $cc->addDownload("$fragUrl$fragNum$auth", "$baseFilename$fragNum");
-            }
-
-          $downloads = $cc->checkDownloads();
-          if ($downloads !== false)
-            {
-              foreach ($downloads as $download)
-                {
-                  if ($download['status'] == 200)
-                    {
-                      if (VerifyFragment($download['response']))
-                        {
-                          DebugLog("Fragment " . $download['id'] . " successfully downloaded");
-                          file_put_contents($download['id'], $download['response']);
-                        }
-                      else
-                        {
-                          DebugLog("Fragment " . $download['id'] . " failed to verify");
-                          DebugLog("Adding fragment " . $download['id'] . " to download queue");
-                          $cc->addDownload($download['url'], $download['id']);
-                        }
-                    }
-                  else if ($download['status'] == 403)
-                      die("Access Denied! Unable to download fragments.");
-                  else if ($download['status'] === false)
-                    {
-                      DebugLog("Fragment " . $download['id'] . " failed to download");
-                      DebugLog("Adding fragment " . $download['id'] . " to download queue");
-                      $cc->addDownload($download['url'], $download['id']);
-                    }
-                  else
-                    {
-                      DebugLog("Fragment " . $download['id'] . " doesn't exist");
-                      $rename = true;
-                    }
-                }
-            }
-          usleep(50000);
-        }
-
-      echo "\n";
-      DebugLog("\nAll fragments downloaded successfully\n");
-      $cc->stopDownloads();
-    }
-
   ShowHeader("KSV Adobe HDS Downloader");
   $flvHeader    = pack("H*", "464c5601050000000900000000");
   $flvHeaderLen = strlen($flvHeader);
   $format       = " %-8s%-16s%-16s%-8s";
-  $auth         = "";
   $baseFilename = "";
-  $outDir       = "";
   $debug        = false;
   $delete       = false;
   $fileExt      = ".f4f";
-  $parallel     = 8;
-  $quality      = "high";
-  $rename       = false;
-  $prevTagSize  = 4;
-  $tagHeaderLen = 11;
-  $prevAudioTS  = -1;
-  $prevVideoTS  = -1;
-  $pAudioTagLen = 0;
-  $pVideoTagLen = 0;
-  $pAudioTagPos = 0;
-  $pVideoTagPos = 0;
+  $outDir       = "";
 
+  // Initialize classes
   $cc  = new cURL();
   $cli = new CLI();
+  $f4f = new F4F();
+
+  // Process command line options
   if ($cli->getParam('help'))
     {
       $cli->displayHelp();
       exit(0);
     }
   if ($cli->getParam('debug'))
-      $debug = true;
+    {
+      $debug      = true;
+      $f4f->debug = $debug;
+    }
   if ($cli->getParam('delete'))
       $delete = true;
   if ($cli->getParam('auth'))
-      $auth = "?" . $cli->getParam('auth');
+      $f4f->auth = "?" . $cli->getParam('auth');
   if ($cli->getParam('fragments'))
-      $baseFilename = $cli->getParam('fragments');
+    {
+      $baseFilename      = $cli->getParam('fragments');
+      $f4f->baseFilename = $baseFilename;
+    }
   if ($cli->getParam('outdir'))
       $outDir = $cli->getParam('outdir');
   if ($cli->getParam('parallel'))
-      $parallel = $cli->getParam('parallel');
+      $f4f->parallel = $cli->getParam('parallel');
   if ($cli->getParam('proxy'))
       $cc->proxy = $cli->getParam('proxy');
   if ($cli->getParam('quality'))
-      $quality = $cli->getParam('quality');
+      $f4f->quality = $cli->getParam('quality');
   if ($cli->getParam('useragent'))
       $cc->user_agent = $cli->getParam('useragent');
   if ($cli->getParam('manifest'))
-      DownloadFragments($cli->getParam('manifest'));
-  if ($cli->getParam('rename') or $rename)
-      RenameFragments($baseFilename, $fileExt);
+      $f4f->DownloadFragments($cc, $cli->getParam('manifest'));
+  if ($cli->getParam('rename') or $f4f->rename)
+      $f4f->RenameFragments($baseFilename, $fileExt);
 
   $fragCount    = 0;
+  $f4f->format  = $format;
   $baseFilename = str_replace('\\', '/', $baseFilename);
   if ((substr($baseFilename, -1) != '/') and (substr($baseFilename, -1) != ':'))
     {
@@ -861,28 +1062,13 @@
       if (!$flv)
           die("Failed to open " . $outFile);
       fwrite($flv, $flvHeader, $flvHeaderLen);
-      if (isset($media) and $media['metadata'])
-        {
-          $media['metadata'] = base64_decode($media['metadata']);
-          $metadataSize      = strlen($media['metadata']);
-          WriteByte($metadata, 0, SCRIPT_DATA);
-          WriteInt24($metadata, 1, $metadataSize);
-          WriteInt24($metadata, 4, 0);
-          WriteInt32($metadata, 7, 0);
-          $metadata = implode("", $metadata) . $media['metadata'];
-          WriteByte($metadata, $tagHeaderLen + $metadataSize - 1, 0x09);
-          WriteInt32($metadata, $tagHeaderLen + $metadataSize, $tagHeaderLen + $metadataSize);
-          fwrite($flv, $metadata, $tagHeaderLen + $metadataSize + $prevTagSize);
-        }
+      $f4f->WriteMetadata($flv);
     }
   else
       exit(1);
 
-  $prevAVC_Header    = false;
-  $prevAAC_Header    = false;
-  $AVC_HeaderWritten = false;
-  $AAC_HeaderWritten = false;
-  $timeStart         = microtime(true);
+  // Process available fragments
+  $timeStart = microtime(true);
   DebugLog("Joining Fragments:");
   for ($i = 1; $i <= $fragCount; $i++)
     {
@@ -912,136 +1098,7 @@
           echo "Skipping fragment number $i\n";
           continue;
         }
-
-      DebugLog(sprintf("\nFragment %d:\n" . $format . "%-16s", $i, "Type", "CurrentTS", "PreviousTS", "Size", "Position"));
-      while ($fragPos < $fragLen)
-        {
-          $packetType  = ReadByte($frag, $fragPos);
-          $packetSize  = ReadInt24($frag, $fragPos + 1);
-          $packetTS    = ReadInt24($frag, $fragPos + 4);
-          $packetTS    = $packetTS | (ReadByte($frag, $fragPos + 7) << 24);
-          $totalTagLen = $tagHeaderLen + $packetSize + $prevTagSize;
-          switch ($packetType)
-          {
-              case AUDIO:
-                  if ($packetTS >= $prevAudioTS - TIMECODE_DURATION * 5)
-                    {
-                      $FrameInfo = ReadByte($frag, $fragPos + $tagHeaderLen);
-                      $CodecID   = ($FrameInfo & 0xF0) >> 4;
-                      if ($CodecID == CODEC_ID_AAC)
-                        {
-                          $AAC_PacketType = ReadByte($frag, $fragPos + $tagHeaderLen + 1);
-                          if ($AAC_PacketType == AAC_SEQUENCE_HEADER)
-                            {
-                              if ($AAC_HeaderWritten)
-                                {
-                                  DebugLog(sprintf("%s\n" . $format, "Skipping AAC sequence header", "AUDIO", $packetTS, $prevAudioTS, $packetSize));
-                                  break;
-                                }
-                              else
-                                {
-                                  DebugLog("Writing AAC sequence header");
-                                  $AAC_HeaderWritten = true;
-                                  $prevAAC_Header    = true;
-                                }
-                            }
-                          else if (!$AAC_HeaderWritten)
-                            {
-                              DebugLog(sprintf("%s\n" . $format, "Discarding audio packet received before AAC sequence header", "AUDIO", $packetTS, $prevAudioTS, $packetSize));
-                              break;
-                            }
-                        }
-                      if ($packetSize > 0)
-                        {
-                          // Check for packets with non-monotonic audio timestamps and fix them
-                          if (!$prevAAC_Header and ($packetTS <= $prevAudioTS))
-                            {
-                              $packetTS += TIMECODE_DURATION + ($prevAudioTS - $packetTS);
-                              WriteInt24($frag, $fragPos + 4, ($packetTS & 0x00FFFFFF));
-                              WriteByte($frag, $fragPos + 7, ($packetTS & 0xFF000000) >> 24);
-                              DebugLog(sprintf("%s\n" . $format, "Fixing audio timestamp", "AUDIO", $packetTS, $prevAudioTS, $packetSize));
-                            }
-                          if (($CodecID == CODEC_ID_AAC) and ($AAC_PacketType != AAC_SEQUENCE_HEADER))
-                              $prevAAC_Header = false;
-                          $pAudioTagPos = ftell($flv);
-                          fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
-                          if ($debug)
-                              DebugLog(sprintf($format . "%-16s", "AUDIO", $packetTS, $prevAudioTS, $packetSize, $pAudioTagPos));
-                          $prevAudioTS  = $packetTS;
-                          $pAudioTagLen = $totalTagLen;
-                        }
-                      else
-                          DebugLog(sprintf("%s\n" . $format, "Skipping small sized audio packet", "AUDIO", $packetTS, $prevAudioTS, $packetSize));
-                    }
-                  else
-                      DebugLog(sprintf("%s\n" . $format, "Skipping audio packet in fragment $i", "AUDIO", $packetTS, $prevAudioTS, $packetSize));
-                  break;
-              case VIDEO:
-                  if ($packetTS >= $prevVideoTS - TIMECODE_DURATION * 5)
-                    {
-                      $FrameInfo = ReadByte($frag, $fragPos + $tagHeaderLen);
-                      $FrameType = ($FrameInfo & 0xF0) >> 4;
-                      $CodecID   = $FrameInfo & 0x0F;
-                      if ($FrameType == FRAME_TYPE_INFO)
-                        {
-                          DebugLog(sprintf("%s\n" . $format, "Skipping video info frame", "VIDEO", $packetTS, $prevVideoTS, $packetSize));
-                          break;
-                        }
-                      if ($CodecID == CODEC_ID_AVC)
-                        {
-                          $AVC_PacketType = ReadByte($frag, $fragPos + $tagHeaderLen + 1);
-                          if ($AVC_PacketType == AVC_SEQUENCE_HEADER)
-                            {
-                              if ($AVC_HeaderWritten)
-                                {
-                                  DebugLog(sprintf("%s\n" . $format, "Skipping AVC sequence header", "VIDEO", $packetTS, $prevVideoTS, $packetSize));
-                                  break;
-                                }
-                              else
-                                {
-                                  DebugLog("Writing AVC sequence header");
-                                  $AVC_HeaderWritten = true;
-                                  $prevAVC_Header    = true;
-                                }
-                            }
-                          else if (!$AVC_HeaderWritten)
-                            {
-                              DebugLog(sprintf("%s\n" . $format, "Discarding video packet received before AVC sequence header", "VIDEO", $packetTS, $prevVideoTS, $packetSize));
-                              break;
-                            }
-                        }
-                      if ($packetSize > 0)
-                        {
-                          // Check for packets with non-monotonic video timestamps and fix them
-                          if (!$prevAVC_Header and (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType != AVC_SEQUENCE_END)) and ($packetTS <= $prevVideoTS))
-                            {
-                              $packetTS += TIMECODE_DURATION + ($prevVideoTS - $packetTS);
-                              WriteInt24($frag, $fragPos + 4, ($packetTS & 0x00FFFFFF));
-                              WriteByte($frag, $fragPos + 7, ($packetTS & 0xFF000000) >> 24);
-                              DebugLog(sprintf("%s\n" . $format, "Fixing video timestamp", "VIDEO", $packetTS, $prevVideoTS, $packetSize));
-                            }
-                          if (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType != AVC_SEQUENCE_HEADER))
-                              $prevAVC_Header = false;
-                          $pVideoTagPos = ftell($flv);
-                          fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
-                          if ($debug)
-                              DebugLog(sprintf($format . "%-16s", "VIDEO", $packetTS, $prevVideoTS, $packetSize, $pVideoTagPos));
-                          $prevVideoTS  = $packetTS;
-                          $pVideoTagLen = $totalTagLen;
-                        }
-                      else
-                          DebugLog(sprintf("%s\n" . $format, "Skipping small sized video packet", "VIDEO", $packetTS, $prevVideoTS, $packetSize));
-                    }
-                  else
-                      DebugLog(sprintf("%s\n" . $format, "Skipping video packet in fragment $i", "VIDEO", $packetTS, $prevVideoTS, $packetSize));
-                  break;
-              case SCRIPT_DATA:
-                  break;
-              default:
-                  die(sprintf("Unknown packet type %s encountered! Encrypted fragments can't be recovered.", $packetType));
-          }
-          $fragPos += $totalTagLen;
-        }
+      $f4f->DecodeFragment($frag, $fragPos, $fragLen, $i, $flv);
       echo "Processed $i fragments\r";
     }
 
