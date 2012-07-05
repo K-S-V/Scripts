@@ -529,6 +529,8 @@
       function DownloadFragments($cc, $manifest)
         {
           $fragNum = 0;
+
+          // Extract baseUrl and baseFilename from manifest url
           if (strpos($manifest, '?') !== false)
             {
               $this->baseUrl = substr($manifest, 0, strpos($manifest, '?'));
@@ -684,15 +686,37 @@
               WriteByte($metadata, $this->tagHeaderLen + $metadataSize - 1, 0x09);
               WriteInt32($metadata, $this->tagHeaderLen + $metadataSize, $this->tagHeaderLen + $metadataSize);
               if ($flv)
+                {
                   fwrite($flv, $metadata, $this->tagHeaderLen + $metadataSize + $this->prevTagSize);
+                  return true;
+                }
               else
                   return $metadata;
             }
+          return false;
         }
 
-      function DecodeFragment($frag, $fragPos, $fragLen, $fragNum, $flv = false)
+      function DecodeFragment($frag, $fragNum, $flv = false)
         {
           $flvData = "";
+          $fragLen = 0;
+          $fragPos = 0;
+
+          $fragLen = strlen($frag);
+          if (!$this->VerifyFragment($frag))
+            {
+              echo "Skipping fragment number $fragNum\n";
+              return false;
+            }
+
+          while ($fragPos < $fragLen)
+            {
+              ReadBoxHeader($frag, $fragPos, $boxType, $boxSize);
+              if ($boxType == "mdat")
+                  break;
+              $fragPos += $boxSize;
+            }
+
           DebugLog(sprintf("\nFragment %d:\n" . $this->format . "%-16s", $fragNum, "Type", "CurrentTS", "PreviousTS", "Size", "Position"));
           while ($fragPos < $fragLen)
             {
@@ -840,7 +864,9 @@
               }
               $fragPos += $totalTagLen;
             }
-          if (!$flv)
+          if ($flv)
+              return true;
+          else
               return $flvData;
         }
     }
@@ -977,6 +1003,7 @@
   $debug        = false;
   $delete       = false;
   $fileExt      = ".f4f";
+  $fragCount    = 0;
   $outDir       = "";
 
   // Initialize classes
@@ -1019,7 +1046,6 @@
   if ($cli->getParam('rename') or $f4f->rename)
       $f4f->RenameFragments($baseFilename, $fileExt);
 
-  $fragCount    = 0;
   $f4f->format  = $format;
   $baseFilename = str_replace('\\', '/', $baseFilename);
   if ((substr($baseFilename, -1) != '/') and (substr($baseFilename, -1) != ':'))
@@ -1043,6 +1069,8 @@
         }
     }
   $outFile = $outDir . $outFile;
+
+  // Check for available fragments
   while (true)
     {
       if (file_exists($baseFilename . ($fragCount + 1) . $fileExt))
@@ -1056,6 +1084,8 @@
           break;
     }
   echo "Found $fragCount fragments\n";
+
+  // Write flv header and metadata
   if ($fragCount)
     {
       $flv = fopen($outFile, "w+b");
@@ -1072,46 +1102,22 @@
   DebugLog("Joining Fragments:");
   for ($i = 1; $i <= $fragCount; $i++)
     {
-      $fragLen = 0;
-      $fragPos = 0;
-      $mdat    = false;
-
-      $frag    = file_get_contents($baseFilename . $i . $fileExt);
-      $fragLen = strlen($frag);
-      while ($fragPos < $fragLen)
-        {
-          ReadBoxHeader($frag, $fragPos, $boxType, $boxSize);
-          if ($boxType == "mdat")
-            {
-              $frag    = substr($frag, $fragPos, $boxSize);
-              $fragLen = strlen($frag);
-              if ($fragLen == $boxSize)
-                  $mdat = true;
-              $fragPos = 0;
-              $fragLen = $boxSize;
-              break;
-            }
-          $fragPos += $boxSize;
-        }
-      if (!$mdat)
-        {
-          echo "Skipping fragment number $i\n";
-          continue;
-        }
-      $f4f->DecodeFragment($frag, $fragPos, $fragLen, $i, $flv);
+      $frag = file_get_contents($baseFilename . $i . $fileExt);
+      $f4f->DecodeFragment($frag, $i, $flv);
       echo "Processed $i fragments\r";
     }
-
   fclose($flv);
   $timeEnd   = microtime(true);
   $timeTaken = sprintf("%.2f", $timeEnd - $timeStart);
   echo "Joined $fragCount fragments in $timeTaken seconds\n";
 
+  // Delete fragments after processing
   if ($delete)
       for ($i = 1; $i <= $fragCount; $i++)
         {
           if (file_exists($baseFilename . $i . $fileExt))
               unlink($baseFilename . $i . $fileExt);
         }
+
   echo "Finished\n";
 ?>
