@@ -352,20 +352,21 @@
               die("Access Denied! Unable to download manifest.");
           else if ($status != 200)
               die("Unable to download manifest");
-          $xml       = simplexml_load_string($cc->response);
+          $xml       = simplexml_load_string(trim($cc->response));
           $namespace = $xml->getDocNamespaces();
           $namespace = $namespace[''];
           $xml->registerXPathNamespace("ns", $namespace);
           $streams = $xml->xpath("/ns:manifest/ns:media");
           foreach ($streams as $stream)
             {
+              $stream    = (array) $stream;
+              $stream    = array_change_key_case($stream['@attributes']);
               $bitrate   = isset($stream['bitrate']) ? (int) $stream['bitrate'] : 1;
-              $streamId  = GetString($stream['streamId']);
-              $bootstrap = $xml->xpath("/ns:manifest/ns:bootstrapInfo[@id='" . $stream['bootstrapInfoId'] . "']");
+              $streamId  = isset($stream[strtolower('streamId')]) ? GetString($stream[strtolower('streamId')]) : "";
+              $bootstrap = $xml->xpath("/ns:manifest/ns:bootstrapInfo[@id='" . $stream[strtolower('bootstrapInfoId')] . "']");
               if (isset($bootstrap[0]['url']))
                 {
-                  $bootstrapUrl = $xml->xpath("/ns:manifest/ns:bootstrapInfo[@id='" . $stream['bootstrapInfoId'] . "']/@url");
-                  $bootstrapUrl = GetString($bootstrapUrl[0]['url']);
+                  $bootstrapUrl = GetString($bootstrap[0]['url']);
                   if (strncasecmp($bootstrapUrl, "http", 4) == 0)
                       $cc->get($bootstrapUrl);
                   else
@@ -528,9 +529,10 @@
 
       function DownloadFragments($cc, $manifest)
         {
-          $fragNum = 0;
+          $discontinuity = "";
+          $fragNum       = 0;
 
-          // Extract baseUrl and baseFilename from manifest url
+          // Extract baseUrl from manifest url
           if (strpos($manifest, '?') !== false)
             {
               $this->baseUrl = substr($manifest, 0, strpos($manifest, '?'));
@@ -538,25 +540,24 @@
             }
           else
               $this->baseUrl = substr($manifest, 0, strrpos($manifest, '/'));
+
           $this->ParseManifest($cc, $manifest);
-          if (strncasecmp($this->media['url'], "http", 4) == 0)
-            {
-              if (substr($this->media['url'], -1) == '/')
-                  $this->baseFilename = substr($this->media['url'], 0, -1);
-              else
-                  $this->baseFilename = $this->media['url'];
-              $this->baseFilename = substr($this->baseFilename, strrpos($this->baseFilename, '/') + 1) . "Seg1-Frag";
-              $fragUrl            = $this->media['url'] . "Seg1-Frag";
-            }
+
+          // Extract baseFilename
+          if (substr($this->media['url'], -1) == '/')
+              $this->baseFilename = substr($this->media['url'], 0, -1);
           else
-            {
-              if (substr($this->media['url'], -1) == '/')
-                  $this->baseFilename = substr($this->media['url'], 0, -1) . "Seg1-Frag";
-              else
-                  $this->baseFilename = $this->media['url'] . "Seg1-Frag";
-              $fragUrl = $this->baseUrl . "/" . $this->media['url'] . "Seg1-Frag";
-            }
+              $this->baseFilename = $this->media['url'];
+          if (strrpos($this->baseFilename, '/'))
+              $this->baseFilename = substr($this->baseFilename, strrpos($this->baseFilename, '/') + 1) . "Seg1-Frag";
+          else
+              $this->baseFilename .= "Seg1-Frag";
           $GLOBALS['baseFilename'] = $this->baseFilename;
+
+          if (strncasecmp($this->media['url'], "http", 4) == 0)
+              $fragUrl = $this->media['url'] . "Seg1-Frag";
+          else
+              $fragUrl = $this->baseUrl . "/" . $this->media['url'] . "Seg1-Frag";
           DebugLog("Downloading Fragments:\n");
 
           while (($fragNum < $this->fragCount) or $cc->active)
