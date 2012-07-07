@@ -508,10 +508,10 @@
             {
               $qualitySegmentUrlModifiers[$i] = ReadString($afrt, $pos);
             }
-          $fragCount = ReadInt32($afrt, $pos);
+          $fragEntries = ReadInt32($afrt, $pos);
           $pos += 4;
           DebugLog(sprintf("%s:\n\n %-8s%-16s%-16s%-16s", "Fragment Entries", "Number", "Timestamp", "Duration", "Discontinuity"));
-          for ($i = 0; $i < $fragCount; $i++)
+          for ($i = 0; $i < $fragEntries; $i++)
             {
               $firstFragment = ReadInt32($afrt, $pos);
               $fragEntry =& $this->fragTable[$firstFragment];
@@ -874,7 +874,7 @@
 
   function ReadByte($str, $pos)
     {
-      $int = unpack("C", substr($str, $pos, 1));
+      $int = unpack("C", $str[$pos]);
       return $int[1];
     }
 
