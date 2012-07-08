@@ -15,7 +15,7 @@
       protected static $ACCEPTED = array(
           0 => array(
               'help'  => 'displays this help',
-              'debug' => 'show debug ouput'
+              'debug' => 'show debug output'
           ),
           1 => array(
               'in'  => 'input filename of flv file to be repaired',

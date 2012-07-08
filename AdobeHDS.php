@@ -15,7 +15,7 @@
       protected static $ACCEPTED = array(
           0 => array(
               'help'   => 'displays this help',
-              'debug'  => 'show debug ouput',
+              'debug'  => 'show debug output',
               'delete' => 'delete fragments after processing',
               'rename' => 'rename fragments sequentially before processing'
           ),
@@ -25,7 +25,7 @@
               'manifest'  => 'manifest file for downloading of fragments',
               'outdir'    => 'destination folder for output file',
               'parallel'  => 'number of fragments to download simultaneously',
-              'proxy'     => 'use proxy for downloading of fragments',
+              'proxy'     => 'proxy for downloading of manifest',
               'quality'   => 'selected quality level (low|medium|high) or exact bitrate',
               'useragent' => 'User-Agent to use for emulation of browser requests'
           )
