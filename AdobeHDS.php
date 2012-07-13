@@ -827,10 +827,16 @@
           DebugLog(sprintf("\nFragment %d:\n" . $this->format . "%-16s", $fragNum, "Type", "CurrentTS", "PreviousTS", "Size", "Position"));
           while ($fragPos < $fragLen)
             {
-              $packetType  = ReadByte($frag, $fragPos);
-              $packetSize  = ReadInt24($frag, $fragPos + 1);
-              $packetTS    = ReadInt24($frag, $fragPos + 4);
-              $packetTS    = $packetTS | (ReadByte($frag, $fragPos + 7) << 24);
+              $packetType = ReadByte($frag, $fragPos);
+              $packetSize = ReadInt24($frag, $fragPos + 1);
+              $packetTS   = ReadInt24($frag, $fragPos + 4);
+              $packetTS   = ($packetTS | (ReadByte($frag, $fragPos + 7) << 24));
+              if ($packetTS & 0x80000000)
+                {
+                  $packetTS &= 0x7FFFFFFF;
+                  WriteInt24($frag, $fragPos + 4, ($packetTS & 0x00FFFFFF));
+                  WriteByte($frag, $fragPos + 7, ($packetTS & 0xFF000000) >> 24);
+                }
               $totalTagLen = $this->tagHeaderLen + $packetSize + $this->prevTagSize;
               switch ($packetType)
               {
