@@ -284,15 +284,23 @@
                   $info         = curl_getinfo($download['ch']);
                   $array['id']  = $download['id'];
                   $array['url'] = $download['url'];
-                  if ($info['size_download'] && ($info['size_download'] >= $info['download_content_length']))
+                  if ($info['http_code'] == 200)
                     {
-                      $array['status']   = $info['http_code'];
-                      $array['response'] = curl_multi_getcontent($download['ch']);
+                      if ($info['size_download'] && ($info['size_download'] >= $info['download_content_length']))
+                        {
+                          $array['status']   = $info['http_code'];
+                          $array['response'] = curl_multi_getcontent($download['ch']);
+                        }
+                      else
+                        {
+                          $array['status']   = false;
+                          $array['response'] = "";
+                        }
                     }
                   else
                     {
-                      $array['status']   = false;
-                      $array['response'] = "";
+                      $array['status']   = $info['http_code'];
+                      $array['response'] = curl_multi_getcontent($download['ch']);
                     }
                   $downloads[] = $array;
                   curl_multi_remove_handle($this->mh, $download['ch']);
@@ -443,15 +451,39 @@
               die("Failed to parse bootstrap info");
         }
 
-      function ParseBootstrapBox($bootstrapInfo, $pos, $debug = true)
+      function UpdateBootstrapInfo($cc, $bootstrapUrl)
+        {
+          $retries = 0;
+          $fragNum = $this->fragCount;
+          while (($fragNum == $this->fragCount) and ($retries < 5))
+            {
+              $bootstrapPos = 0;
+              DebugLog("Updating bootstrap info, Available fragments: $this->fragCount");
+              if ($cc->get($bootstrapUrl) != 200)
+                  die("Failed to refresh bootstrap info");
+              $bootstrapInfo = $cc->response;
+              ReadBoxHeader($bootstrapInfo, $bootstrapPos, $boxType, $boxSize);
+              if ($boxType == "abst")
+                  $this->ParseBootstrapBox($bootstrapInfo, $bootstrapPos);
+              else
+                  die("Failed to parse bootstrap info");
+              DebugLog("Update complete, Available fragments: $this->fragCount");
+              if ($fragNum == $this->fragCount)
+                {
+                  usleep(1000000);
+                  $retries++;
+                }
+            }
+        }
+
+      function ParseBootstrapBox($bootstrapInfo, $pos)
         {
           $version          = ReadByte($bootstrapInfo, $pos);
           $flags            = ReadInt24($bootstrapInfo, $pos + 1);
           $bootstrapVersion = ReadInt32($bootstrapInfo, $pos + 4);
           $byte             = ReadByte($bootstrapInfo, $pos + 8);
           $profile          = ($byte & 0xC0) >> 6;
-          $this->live       = (($byte & 0x20) >> 5) ? true : false;
-          if ($this->live)
+          if ($this->live = (($byte & 0x20) >> 5) ? true : false)
               $this->parallel = 1;
           $update              = ($byte & 0x10) >> 4;
           $timescale           = ReadInt32($bootstrapInfo, $pos + 9);
@@ -472,7 +504,7 @@
             {
               ReadBoxHeader($bootstrapInfo, $pos, $boxType, $boxSize);
               if ($boxType == "asrt")
-                  $this->ParseAsrtBox($bootstrapInfo, $pos, $debug);
+                  $this->ParseAsrtBox($bootstrapInfo, $pos);
               $pos += $boxSize;
             }
           $fragRunTableCount = ReadByte($bootstrapInfo, $pos++);
@@ -480,13 +512,14 @@
             {
               ReadBoxHeader($bootstrapInfo, $pos, $boxType, $boxSize);
               if ($boxType == "afrt")
-                  $this->ParseAfrtBox($bootstrapInfo, $pos, $debug);
+                  $this->ParseAfrtBox($bootstrapInfo, $pos);
               $pos += $boxSize;
             }
         }
 
-      function ParseAsrtBox($asrt, $pos, $debug)
+      function ParseAsrtBox($asrt, $pos)
         {
+          $this->segTable    = array();
           $version           = ReadByte($asrt, $pos);
           $flags             = ReadInt24($asrt, $pos + 1);
           $qualityEntryCount = ReadByte($asrt, $pos + 4);
@@ -497,8 +530,7 @@
             }
           $segCount = ReadInt32($asrt, $pos);
           $pos += 4;
-          if ($debug)
-              DebugLog(sprintf("%s:\n\n %-8s%-10s", "Segment Entries", "Number", "Fragments"));
+          DebugLog(sprintf("%s:\n\n %-8s%-10s", "Segment Entries", "Number", "Fragments"));
           for ($i = 0; $i < $segCount; $i++)
             {
               $firstSegment = ReadInt32($asrt, $pos);
@@ -506,14 +538,15 @@
               $segEntry['firstSegment']        = $firstSegment;
               $segEntry['fragmentsPerSegment'] = ReadInt32($asrt, $pos + 4);
               $pos += 8;
-              if ($debug)
-                  DebugLog(sprintf(" %-8s%-10s", $segEntry['firstSegment'], $segEntry['fragmentsPerSegment']));
+              DebugLog(sprintf(" %-8s%-10s", $segEntry['firstSegment'], $segEntry['fragmentsPerSegment']));
             }
-          if ($debug)
-              DebugLog("");
+          DebugLog("");
+          ksort($this->segTable, SORT_NUMERIC);
           $lastSegment     = end($this->segTable);
           $this->fragCount = $lastSegment['fragmentsPerSegment'];
-          if ($this->live)
+
+          // Use fragment table in case of negative number of fragments
+          if ($this->live and ($this->fragCount > 0))
             {
               $secondLastSegment = prev($this->segTable);
               if (($this->segNum == 1) and (!$this->fragNum))
@@ -521,15 +554,16 @@
                   $this->segNum      = $lastSegment['firstSegment'];
                   $this->fragsPerSeg = $secondLastSegment['fragmentsPerSegment'];
                   $this->fragNum     = $secondLastSegment['firstSegment'] * $this->fragsPerSeg + $this->fragCount - 1;
-                  $this->fragCount   = $this->fragNum + 1;
+                  $this->fragCount   = $secondLastSegment['firstSegment'] * $this->fragsPerSeg + $this->fragCount;
                 }
               else
                   $this->fragCount = $secondLastSegment['firstSegment'] * $this->fragsPerSeg + $this->fragCount;
             }
         }
 
-      function ParseAfrtBox($afrt, $pos, $debug)
+      function ParseAfrtBox($afrt, $pos)
         {
+          $this->fragTable   = array();
           $version           = ReadByte($afrt, $pos);
           $flags             = ReadInt24($afrt, $pos + 1);
           $timescale         = ReadInt32($afrt, $pos + 4);
@@ -541,8 +575,7 @@
             }
           $fragEntries = ReadInt32($afrt, $pos);
           $pos += 4;
-          if ($debug)
-              DebugLog(sprintf("%s:\n\n %-8s%-16s%-16s%-16s", "Fragment Entries", "Number", "Timestamp", "Duration", "Discontinuity"));
+          DebugLog(sprintf("%s:\n\n %-8s%-16s%-16s%-16s", "Fragment Entries", "Number", "Timestamp", "Duration", "Discontinuity"));
           for ($i = 0; $i < $fragEntries; $i++)
             {
               $firstFragment = ReadInt32($afrt, $pos);
@@ -554,11 +587,23 @@
               $pos += 16;
               if ($fragEntry['fragmentDuration'] == 0)
                   $fragEntry['discontinuityIndicator'] = ReadByte($afrt, $pos++);
-              if ($debug)
-                  DebugLog(sprintf(" %-8s%-16s%-16s%-16s", $fragEntry['firstFragment'], $fragEntry['firstFragmentTimestamp'], $fragEntry['fragmentDuration'], $fragEntry['discontinuityIndicator']));
+              DebugLog(sprintf(" %-8s%-16s%-16s%-16s", $fragEntry['firstFragment'], $fragEntry['firstFragmentTimestamp'], $fragEntry['fragmentDuration'], $fragEntry['discontinuityIndicator']));
             }
-          if ($debug)
-              DebugLog("");
+          DebugLog("");
+          ksort($this->fragTable, SORT_NUMERIC);
+
+          // Use fragment table in case of negative number of fragments
+          if ($this->live and ($this->fragCount <= 0))
+            {
+              $lastFragment = end($this->fragTable);
+              if (($this->segNum == 1) and (!$this->fragNum))
+                {
+                  $this->fragNum   = $lastFragment['firstFragment'] - 1;
+                  $this->fragCount = $lastFragment['firstFragment'];
+                }
+              else
+                  $this->fragCount = $lastFragment['firstFragment'];
+            }
         }
 
       function DownloadFragments($cc, $manifest)
@@ -573,9 +618,8 @@
               $this->baseUrl = substr($manifest, 0, strrpos($manifest, '/'));
 
           $this->ParseManifest($cc, $manifest);
-          $segNum    = $this->segNum;
-          $fragNum   = $this->fragNum;
-          $fragCount = $this->fragCount;
+          $segNum  = $this->segNum;
+          $fragNum = $this->fragNum;
 
           // Extract baseFilename
           if (substr($this->media['url'], -1) == '/')
@@ -594,18 +638,12 @@
               $this->fragUrl = $this->baseUrl . "/" . $this->media['url'];
           DebugLog("Downloading Fragments:\n");
 
-          if ($this->live)
+          while (($fragNum < $this->fragCount) or $cc->active)
             {
-              $fragNum = $fragCount - 1;
-              $flv     = WriteFlvFile($this->baseFilename . ".flv");
-            }
-
-          while (($fragNum < $fragCount) or $cc->active)
-            {
-              while ((count($cc->ch) < $this->parallel) and ($fragNum < $fragCount))
+              while ((count($cc->ch) < $this->parallel) and ($fragNum < $this->fragCount))
                 {
                   $fragNum += 1;
-                  echo "Downloading $fragNum/$fragCount fragments\r";
+                  echo "Downloading $fragNum/$this->fragCount fragments\r";
                   if (in_array_field($fragNum, "firstFragment", $this->fragTable, true))
                       $this->discontinuity = value_in_array_field($fragNum, "firstFragment", "discontinuityIndicator", $this->fragTable, true);
                   if (($this->discontinuity == 1) or ($this->discontinuity == 3))
@@ -618,7 +656,8 @@
                       DebugLog("Fragment $fragNum is already downloaded");
                       continue;
                     }
-                  if ($fragNum > ($segNum * $this->fragsPerSeg))
+                  // Increase segment number if current fragment is not available in this segment range
+                  if (($this->segNum > 1) and ($fragNum > ($segNum * $this->fragsPerSeg)))
                       $segNum++;
                   DebugLog("Adding fragment $fragNum to download queue");
                   $cc->addDownload("$this->fragUrl" . "Seg$segNum" . "-Frag$fragNum$this->auth", "$this->baseFilename$fragNum");
@@ -636,23 +675,13 @@
                               DebugLog("Fragment " . $download['id'] . " successfully downloaded");
                               if ($this->live)
                                 {
+                                  if (!isset($flv))
+                                      $flv = WriteFlvFile($this->baseFilename . ".flv");
                                   $this->DecodeFragment($download['response'], $fragNum, $flv);
 
-                                  // Update bootstrap info on successful download of last available fragment
-                                  if ($fragNum == $fragCount)
-                                    {
-                                      $bootstrapPos = 0;
-                                      DebugLog("Updating bootstrap info");
-                                      if ($cc->get($this->bootstrapUrl) != 200)
-                                          die("Failed to refresh bootstrap info");
-                                      $bootstrapInfo = $cc->response;
-                                      ReadBoxHeader($bootstrapInfo, $bootstrapPos, $boxType, $boxSize);
-                                      if ($boxType == "abst")
-                                          $this->ParseBootstrapBox($bootstrapInfo, $bootstrapPos, false);
-                                      else
-                                          die("Failed to parse bootstrap info");
-                                      $fragCount = $this->fragCount;
-                                    }
+                                  // Update bootstrap info after successful download of last known fragment
+                                  if ($fragNum == $this->fragCount)
+                                      $this->UpdateBootstrapInfo($cc, $this->bootstrapUrl);
                                 }
                               else
                                   file_put_contents($download['id'], $download['response']);
@@ -674,8 +703,17 @@
                         }
                       else
                         {
-                          DebugLog("Fragment " . $download['id'] . " doesn't exist");
+                          DebugLog("Fragment " . $download['id'] . " doesn't exist, Status: " . $download['status']);
                           $this->rename = true;
+
+                          /* Resync with latest available fragment when we are left behind due to */
+                          /* slow connection and short live window on streaming server            */
+                          if ($this->live and ($download['status'] == 404) and ($fragNum == $this->fragCount))
+                            {
+                              DebugLog("Trying to resync with latest available fragment");
+                              $this->UpdateBootstrapInfo($cc, $this->bootstrapUrl);
+                              $fragNum = $this->fragCount - 1;
+                            }
                         }
                     }
                 }
@@ -691,6 +729,11 @@
         {
           $fragPos = 0;
           $fragLen = strlen($frag);
+
+          // Some moronic live servers add wrong boxSize in header causing verification to fail
+          if ($this->live)
+              return true;
+
           while ($fragPos < $fragLen)
             {
               ReadBoxHeader($frag, $fragPos, $boxType, $boxSize);
