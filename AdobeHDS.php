@@ -833,7 +833,7 @@
               $packetTS   = ($packetTS | (ReadByte($frag, $fragPos + 7) << 24));
               if ($packetTS & 0x80000000)
                 {
-                  $packetTS &= 0x7FFFFFFF;
+                  $packetTS += 0x7FFFFFFF;
                   WriteInt24($frag, $fragPos + 4, ($packetTS & 0x00FFFFFF));
                   WriteByte($frag, $fragPos + 7, ($packetTS & 0xFF000000) >> 24);
                 }
@@ -1004,7 +1004,10 @@
 
   function ReadInt64($str, $pos)
     {
-      return bcadd(bcmul(ReadInt32($str, $pos), "4294967296"), ReadInt32($str, $pos + 4));
+      $hi    = sprintf("%u", ReadInt32($str, $pos));
+      $lo    = sprintf("%u", ReadInt32($str, $pos + 4));
+      $int64 = bcadd(bcmul($hi, "4294967296"), $lo);
+      return $int64;
     }
 
   function ReadString($frag, &$fragPos)
