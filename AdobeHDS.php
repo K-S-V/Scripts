@@ -546,7 +546,7 @@
           $this->fragCount = $lastSegment['fragmentsPerSegment'];
 
           // Use fragment table in case of negative number of fragments
-          if ($this->live and ($this->fragCount > 0))
+          if ($this->live and !($this->fragCount & 0x80000000))
             {
               $secondLastSegment = prev($this->segTable);
               if (($this->segNum == 1) and (!$this->fragNum))
@@ -593,7 +593,7 @@
           ksort($this->fragTable, SORT_NUMERIC);
 
           // Use fragment table in case of negative number of fragments
-          if ($this->live and ($this->fragCount <= 0))
+          if ($this->live and ($this->fragCount & 0x80000000))
             {
               $lastFragment = end($this->fragTable);
               if (($this->segNum == 1) and (!$this->fragNum))
@@ -833,7 +833,7 @@
               $packetTS   = ($packetTS | (ReadByte($frag, $fragPos + 7) << 24));
               if ($packetTS & 0x80000000)
                 {
-                  $packetTS += 0x7FFFFFFF;
+                  $packetTS = ($packetTS + 0x7FFFFFFF) & 0x7FFFFFFF;
                   WriteInt24($frag, $fragPos + 4, ($packetTS & 0x00FFFFFF));
                   WriteByte($frag, $fragPos + 7, ($packetTS & 0xFF000000) >> 24);
                 }
@@ -1140,6 +1140,18 @@
   $fragCount    = 0;
   $fragNum      = 0;
   $outDir       = "";
+
+  // Check for required extensions
+  $extensions = array(
+      "bcmath",
+      "curl",
+      "SimpleXML"
+  );
+  foreach ($extensions as $extension)
+    {
+      if (!extension_loaded($extension))
+          die("You don't have $extension extension installed. please install it before continuing.");
+    }
 
   // Initialize classes
   $cc  = new cURL();
