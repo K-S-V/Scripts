@@ -22,6 +22,7 @@
           ),
           1 => array(
               'auth'      => 'authentication string for fragment requests',
+              'duration'  => 'stop recording after specified number of seconds',
               'fragments' => 'base filename for fragments',
               'manifest'  => 'manifest file for downloading of fragments',
               'outdir'    => 'destination folder for output file',
@@ -328,7 +329,7 @@
 
   class F4F
     {
-      var $auth, $baseFilename, $bootstrapUrl, $baseUrl, $debug, $format, $live, $media, $parallel, $quality, $rename;
+      var $auth, $baseFilename, $baseTS, $bootstrapUrl, $baseUrl, $debug, $duration, $format, $live, $media, $parallel, $quality, $rename;
       var $prevTagSize, $tagHeaderLen;
       var $segTable, $fragTable, $segNum, $fragNum, $fragCount, $fragsPerSeg, $fragUrl, $discontinuity;
       var $prevAudioTS, $prevVideoTS, $pAudioTagLen, $pVideoTagLen, $pAudioTagPos, $pVideoTagPos;
@@ -338,8 +339,10 @@
         {
           $this->auth              = "";
           $this->baseFilename      = "";
+          $this->baseTS            = false;
           $this->bootstrapUrl      = "";
           $this->debug             = false;
+          $this->duration          = 0;
           $this->format            = "";
           $this->live              = false;
           $this->parallel          = 8;
@@ -656,9 +659,11 @@
                       DebugLog("Fragment $fragNum is already downloaded");
                       continue;
                     }
+
                   // Increase segment number if current fragment is not available in this segment range
                   if (($this->segNum > 1) and ($fragNum > ($segNum * $this->fragsPerSeg)))
                       $segNum++;
+
                   DebugLog("Adding fragment $fragNum to download queue");
                   $cc->addDownload("$this->fragUrl" . "Seg$segNum" . "-Frag$fragNum$this->auth", "$this->baseFilename$fragNum");
                 }
@@ -678,6 +683,8 @@
                                   if (!isset($flv))
                                       $flv = WriteFlvFile($this->baseFilename . ".flv");
                                   $this->DecodeFragment($download['response'], $fragNum, $flv);
+                                  if ($GLOBALS['duration'] and ($this->duration >= $GLOBALS['duration']))
+                                      die("\nFinished recording $this->duration seconds of content.\n");
 
                                   // Update bootstrap info after successful download of last known fragment
                                   if ($fragNum == $this->fragCount)
@@ -803,6 +810,12 @@
           return false;
         }
 
+      function WriteFlvTimestamp(&$frag, $fragPos, $packetTS)
+        {
+          WriteInt24($frag, $fragPos + 4, ($packetTS & 0x00FFFFFF));
+          WriteByte($frag, $fragPos + 7, ($packetTS & 0xFF000000) >> 24);
+        }
+
       function DecodeFragment($frag, $fragNum, $flv = false)
         {
           $flvData = "";
@@ -834,9 +847,10 @@
               if ($packetTS & 0x80000000)
                 {
                   $packetTS = ($packetTS + 0x7FFFFFFF) & 0x7FFFFFFF;
-                  WriteInt24($frag, $fragPos + 4, ($packetTS & 0x00FFFFFF));
-                  WriteByte($frag, $fragPos + 7, ($packetTS & 0xFF000000) >> 24);
+                  $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
                 }
+              if ($this->baseTS === false)
+                  $this->baseTS = $packetTS;
               $totalTagLen = $this->tagHeaderLen + $packetSize + $this->prevTagSize;
               switch ($packetType)
               {
@@ -874,8 +888,7 @@
                               if (!$this->prevAAC_Header and ($packetTS <= $this->prevAudioTS))
                                 {
                                   $packetTS += TIMECODE_DURATION + ($this->prevAudioTS - $packetTS);
-                                  WriteInt24($frag, $fragPos + 4, ($packetTS & 0x00FFFFFF));
-                                  WriteByte($frag, $fragPos + 7, ($packetTS & 0xFF000000) >> 24);
+                                  $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
                                   DebugLog(sprintf("%s\n" . $this->format, "Fixing audio timestamp", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize));
                                 }
                               if (($CodecID == CODEC_ID_AAC) and ($AAC_PacketType != AAC_SEQUENCE_HEADER))
@@ -942,8 +955,7 @@
                               if (!$this->prevAVC_Header and (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType != AVC_SEQUENCE_END)) and ($packetTS <= $this->prevVideoTS))
                                 {
                                   $packetTS += TIMECODE_DURATION + ($this->prevVideoTS - $packetTS);
-                                  WriteInt24($frag, $fragPos + 4, ($packetTS & 0x00FFFFFF));
-                                  WriteByte($frag, $fragPos + 7, ($packetTS & 0xFF000000) >> 24);
+                                  $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
                                   DebugLog(sprintf("%s\n" . $this->format, "Fixing video timestamp", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
                                 }
                               if (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType != AVC_SEQUENCE_HEADER))
@@ -977,6 +989,7 @@
               }
               $fragPos += $totalTagLen;
             }
+          $this->duration = round(($packetTS - $this->baseTS) / 1000, 0);
           if ($flv)
               return true;
           else
@@ -1135,6 +1148,7 @@
   $format       = " %-8s%-16s%-16s%-8s";
   $baseFilename = "";
   $debug        = false;
+  $duration     = 0;
   $delete       = false;
   $fileExt      = ".f4f";
   $fragCount    = 0;
@@ -1177,6 +1191,8 @@
       $cc->fragProxy = true;
   if ($cli->getParam('auth'))
       $f4f->auth = "?" . $cli->getParam('auth');
+  if ($cli->getParam('duration'))
+      $duration = $cli->getParam('duration');
   if ($cli->getParam('fragments'))
     {
       $baseFilename      = $cli->getParam('fragments');
