@@ -329,7 +329,8 @@
 
   class F4F
     {
-      var $auth, $baseFilename, $baseTS, $bootstrapUrl, $baseUrl, $debug, $duration, $format, $live, $media, $parallel, $quality, $rename;
+      var $audio, $auth, $baseFilename, $baseTS, $bootstrapUrl, $baseUrl, $debug, $duration, $format;
+      var $live, $media, $parallel, $quality, $rename, $video;
       var $prevTagSize, $tagHeaderLen;
       var $segTable, $fragTable, $segNum, $fragNum, $fragCount, $fragsPerSeg, $fragUrl, $discontinuity;
       var $prevAudioTS, $prevVideoTS, $pAudioTagLen, $pVideoTagLen, $pAudioTagPos, $pVideoTagPos;
@@ -337,6 +338,7 @@
 
       public function __construct()
         {
+          $this->audio             = false;
           $this->auth              = "";
           $this->baseFilename      = "";
           $this->baseTS            = false;
@@ -348,10 +350,11 @@
           $this->parallel          = 8;
           $this->quality           = "high";
           $this->rename            = false;
+          $this->video             = false;
           $this->prevTagSize       = 4;
           $this->tagHeaderLen      = 11;
           $this->segNum            = 1;
-          $this->fragNum           = 0;
+          $this->fragNum           = false;
           $this->fragCount         = 0;
           $this->fragsPerSeg       = 0;
           $this->fragUrl           = "";
@@ -458,7 +461,7 @@
         {
           $retries = 0;
           $fragNum = $this->fragCount;
-          while (($fragNum == $this->fragCount) and ($retries < 5))
+          while (($fragNum == $this->fragCount) and ($retries < 30))
             {
               $bootstrapPos = 0;
               DebugLog("Updating bootstrap info, Available fragments: $this->fragCount");
@@ -548,15 +551,15 @@
           $lastSegment     = end($this->segTable);
           $this->fragCount = $lastSegment['fragmentsPerSegment'];
 
-          // Use fragment table in case of negative number of fragments
-          if ($this->live and !($this->fragCount & 0x80000000))
+          // Use fragment table in case of single segment
+          if ($this->live and ($lastSegment['firstSegment'] > 1))
             {
               $secondLastSegment = prev($this->segTable);
-              if (($this->segNum == 1) and (!$this->fragNum))
+              if ($this->fragNum === false)
                 {
                   $this->segNum      = $lastSegment['firstSegment'];
                   $this->fragsPerSeg = $secondLastSegment['fragmentsPerSegment'];
-                  $this->fragNum     = $secondLastSegment['firstSegment'] * $this->fragsPerSeg + $this->fragCount - 1;
+                  $this->fragNum     = $secondLastSegment['firstSegment'] * $this->fragsPerSeg + $this->fragCount - 2;
                   $this->fragCount   = $secondLastSegment['firstSegment'] * $this->fragsPerSeg + $this->fragCount;
                 }
               else
@@ -595,13 +598,13 @@
           DebugLog("");
           ksort($this->fragTable, SORT_NUMERIC);
 
-          // Use fragment table in case of negative number of fragments
-          if ($this->live and ($this->fragCount & 0x80000000))
+          // Use fragment table in case of single segment
+          if ($this->live and ($this->segNum == 1))
             {
               $lastFragment = end($this->fragTable);
-              if (($this->segNum == 1) and (!$this->fragNum))
+              if ($this->fragNum === false)
                 {
-                  $this->fragNum   = $lastFragment['firstFragment'] - 1;
+                  $this->fragNum   = $lastFragment['firstFragment'] - 2;
                   $this->fragCount = $lastFragment['firstFragment'];
                 }
               else
@@ -681,8 +684,13 @@
                               if ($this->live)
                                 {
                                   if (!isset($flv))
-                                      $flv = WriteFlvFile($this->baseFilename . ".flv");
-                                  $this->DecodeFragment($download['response'], $fragNum, $flv);
+                                    {
+                                      $flvData = $this->DecodeFragment($download['response'], $fragNum);
+                                      $flv     = WriteFlvFile($this->baseFilename . ".flv", $this->audio, $this->video);
+                                      fwrite($flv, $flvData, strlen($flvData));
+                                    }
+                                  else
+                                      $this->DecodeFragment($download['response'], $fragNum, $flv);
                                   if ($GLOBALS['duration'] and ($this->duration >= $GLOBALS['duration']))
                                       die("\nFinished recording $this->duration seconds of content.\n");
 
@@ -887,9 +895,9 @@
                               // Check for packets with non-monotonic audio timestamps and fix them
                               if (!$this->prevAAC_Header and ($packetTS <= $this->prevAudioTS))
                                 {
+                                  DebugLog(sprintf("%s\n" . $this->format, "Fixing audio timestamp", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize));
                                   $packetTS += TIMECODE_DURATION + ($this->prevAudioTS - $packetTS);
                                   $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
-                                  DebugLog(sprintf("%s\n" . $this->format, "Fixing audio timestamp", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize));
                                 }
                               if (($CodecID == CODEC_ID_AAC) and ($AAC_PacketType != AAC_SEQUENCE_HEADER))
                                   $this->prevAAC_Header = false;
@@ -914,6 +922,8 @@
                         }
                       else
                           DebugLog(sprintf("%s\n" . $this->format, "Skipping audio packet in fragment $fragNum", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize));
+                      if (!$this->audio)
+                          $this->audio = true;
                       break;
                   case VIDEO:
                       if ($packetTS >= $this->prevVideoTS - TIMECODE_DURATION * 5)
@@ -954,9 +964,9 @@
                               // Check for packets with non-monotonic video timestamps and fix them
                               if (!$this->prevAVC_Header and (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType != AVC_SEQUENCE_END)) and ($packetTS <= $this->prevVideoTS))
                                 {
+                                  DebugLog(sprintf("%s\n" . $this->format, "Fixing video timestamp", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
                                   $packetTS += TIMECODE_DURATION + ($this->prevVideoTS - $packetTS);
                                   $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
-                                  DebugLog(sprintf("%s\n" . $this->format, "Fixing video timestamp", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
                                 }
                               if (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType != AVC_SEQUENCE_HEADER))
                                   $this->prevAVC_Header = false;
@@ -982,6 +992,8 @@
                       else
                           DebugLog(sprintf("%s\n" . $this->format, "Skipping video packet in fragment $fragNum", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
                       break;
+                      if (!$this->video)
+                          $this->video = true;
                   case SCRIPT_DATA:
                       break;
                   default:
@@ -1097,9 +1109,17 @@
       printf($format, $header);
     }
 
-  function WriteFlvFile($outFile)
+  function WriteFlvFile($outFile, $audio = true, $video = true)
     {
-      global $f4f, $flvHeader, $flvHeaderLen;
+      global $f4f, $flvHeaderLen;
+
+      $flvHeader = $GLOBALS['flvHeader'];
+      if (!$video or !$audio)
+          if ($audio & !$video)
+              $flvHeader[4] = "\x04";
+          else if ($video & !$audio)
+              $flvHeader[4] = "\x01";
+
       $flv = fopen($outFile, "w+b");
       if (!$flv)
           die("Failed to open " . $outFile);
