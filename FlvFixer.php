@@ -47,13 +47,8 @@
                     }
                   else if (!$doubleParam && !$isparam)
                     {
-                      if (!$GLOBALS['baseFilename'])
-                          $GLOBALS['baseFilename'] = $arg;
-                      else
-                        {
-                          echo "'$arg' is an invalid switch, use --help to display valid switches\n";
-                          exit(1);
-                        }
+                      echo "'$arg' is an invalid switch, use --help to display valid switches\n";
+                      exit(1);
                     }
                   else if (!$doubleParam && $isparam)
                     {
@@ -117,7 +112,7 @@
 
   function ReadByte($str, $pos)
     {
-      $int = unpack("C", substr($str, $pos, 1));
+      $int = unpack("C", $str[$pos]);
       return $int[1];
     }
 
@@ -153,6 +148,12 @@
       $str[$pos + 3] = pack("C", $int & 0xFF);
     }
 
+  function WriteFlvTimestamp(&$flvTag, $tagPos, $packetTS)
+    {
+      WriteInt24($flvTag, $tagPos + 4, ($packetTS & 0x00FFFFFF));
+      WriteByte($flvTag, $tagPos + 7, ($packetTS & 0xFF000000) >> 24);
+    }
+
   function DebugLog($msg)
     {
       global $debug;
@@ -164,7 +165,10 @@
   $flvHeader    = pack("H*", "464c5601050000000900000000");
   $flvHeaderLen = strlen($flvHeader);
   $format       = " %-8s%-16s%-16s%-8s";
+  $audio        = false;
+  $baseTS       = false;
   $debug        = false;
+  $video        = false;
   $prevTagSize  = 4;
   $tagHeaderLen = 11;
   $prevAudioTS  = -1;
@@ -216,12 +220,21 @@
   DebugLog(sprintf($format . "%-16s", "Type", "CurrentTS", "PreviousTS", "Size", "Position"));
   while ($filePos < $fileLen)
     {
-      $flvTag      = fread($flvIn, $tagHeaderLen);
-      $tagPos      = 0;
-      $packetType  = ReadByte($flvTag, $tagPos);
-      $packetSize  = ReadInt24($flvTag, $tagPos + 1);
-      $packetTS    = ReadInt24($flvTag, $tagPos + 4);
-      $packetTS    = $packetTS | (ReadByte($flvTag, $tagPos + 7) << 24);
+      $flvTag     = fread($flvIn, $tagHeaderLen);
+      $tagPos     = 0;
+      $packetType = ReadByte($flvTag, $tagPos);
+      $packetSize = ReadInt24($flvTag, $tagPos + 1);
+      $packetTS   = ReadInt24($flvTag, $tagPos + 4);
+      $packetTS   = $packetTS | (ReadByte($flvTag, $tagPos + 7) << 24);
+
+      if ($baseTS === false)
+          $baseTS = $packetTS;
+      if ($baseTS > 1000)
+        {
+          $packetTS -= $baseTS;
+          WriteFlvTimestamp($flvTag, $tagPos, $packetTS);
+        }
+
       $flvTag      = $flvTag . fread($flvIn, $packetSize + $prevTagSize);
       $totalTagLen = $tagHeaderLen + $packetSize + $prevTagSize;
       if (strlen($flvTag) != $totalTagLen)
@@ -264,10 +277,9 @@
                       // Check for packets with non-monotonic audio timestamps and fix them
                       if (!$prevAAC_Header and ($packetTS <= $prevAudioTS))
                         {
-                          $packetTS += TIMECODE_DURATION + ($prevAudioTS - $packetTS);
-                          WriteInt24($flvTag, $tagPos + 4, ($packetTS & 0x00FFFFFF));
-                          WriteByte($flvTag, $tagPos + 7, ($packetTS & 0xFF000000) >> 24);
                           DebugLog(sprintf("%s\n" . $format, "Fixing audio timestamp", "AUDIO", $packetTS, $prevAudioTS, $packetSize));
+                          $packetTS += TIMECODE_DURATION + ($prevAudioTS - $packetTS);
+                          WriteFlvTimestamp($flvTag, $tagPos, $packetTS);
                         }
                       if (($CodecID == CODEC_ID_AAC) and ($AAC_PacketType != AAC_SEQUENCE_HEADER))
                           $prevAAC_Header = false;
@@ -283,6 +295,8 @@
                 }
               else
                   DebugLog(sprintf("%s\n" . $format, "Skipping audio packet", "AUDIO", $packetTS, $prevAudioTS, $packetSize));
+              if (!$audio)
+                  $audio = true;
               break;
           case VIDEO:
               if ($packetTS >= $prevVideoTS - TIMECODE_DURATION * 5)
@@ -323,10 +337,9 @@
                       // Check for packets with non-monotonic video timestamps and fix them
                       if (!$prevAVC_Header and (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType != AVC_SEQUENCE_END)) and ($packetTS <= $prevVideoTS))
                         {
-                          $packetTS += TIMECODE_DURATION + ($prevVideoTS - $packetTS);
-                          WriteInt24($flvTag, $tagPos + 4, ($packetTS & 0x00FFFFFF));
-                          WriteByte($flvTag, $tagPos + 7, ($packetTS & 0xFF000000) >> 24);
                           DebugLog(sprintf("%s\n" . $format, "Fixing video timestamp", "VIDEO", $packetTS, $prevVideoTS, $packetSize));
+                          $packetTS += TIMECODE_DURATION + ($prevVideoTS - $packetTS);
+                          WriteFlvTimestamp($flvTag, $tagPos, $packetTS);
                         }
                       if (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType != AVC_SEQUENCE_HEADER))
                           $prevAVC_Header = false;
@@ -342,6 +355,8 @@
                 }
               else
                   DebugLog(sprintf("%s\n" . $format, "Skipping video packet", "VIDEO", $packetTS, $prevVideoTS, $packetSize));
+              if (!$video)
+                  $video = true;
               break;
           case SCRIPT_DATA:
               $pMetaTagPos = ftell($flvOut);
@@ -356,6 +371,17 @@
           echo sprintf("Processed %d/%.2f MB\r", $cFilePos, $fileSize);
           $pFilePos = $cFilePos;
         }
+    }
+
+  // Fix flv header when required
+  if (!$video or !$audio)
+    {
+      if ($audio & !$video)
+          $flvHeader[4] = "\x04";
+      else if ($video & !$audio)
+          $flvHeader[4] = "\x01";
+      fseek($flvOut, 0);
+      fwrite($flvOut, $flvHeader, $flvHeaderLen);
     }
 
   fclose($flvIn);
