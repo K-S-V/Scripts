@@ -857,7 +857,7 @@
                   $packetTS = ($packetTS + 0x7FFFFFFF) & 0x7FFFFFFF;
                   $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
                 }
-              if ($this->baseTS === false)
+              if (($this->baseTS === false) and (($packetType == AUDIO) or ($packetType == VIDEO)))
                   $this->baseTS = $packetTS;
               $totalTagLen = $this->tagHeaderLen + $packetSize + $this->prevTagSize;
               switch ($packetType)
@@ -1001,7 +1001,8 @@
               }
               $fragPos += $totalTagLen;
             }
-          $this->duration = round(($packetTS - $this->baseTS) / 1000, 0);
+          if ($this->baseTS !== false)
+              $this->duration = round(($packetTS - $this->baseTS) / 1000, 0);
           if ($flv)
               return true;
           else
@@ -1257,7 +1258,8 @@
   $outFile = $outDir . $outFile;
 
   // Check for available fragments
-  $fragNum = $f4f->fragNum;
+  if ($f4f->fragNum)
+      $fragNum = $f4f->fragNum;
   while (true)
     {
       if (file_exists($baseFilename . ($fragNum + 1) . $fileExt))

@@ -227,7 +227,7 @@
       $packetTS   = ReadInt24($flvTag, $tagPos + 4);
       $packetTS   = $packetTS | (ReadByte($flvTag, $tagPos + 7) << 24);
 
-      if ($baseTS === false)
+      if (($baseTS === false) and (($packetType == AUDIO) or ($packetType == VIDEO)))
           $baseTS = $packetTS;
       if ($baseTS > 1000)
         {
