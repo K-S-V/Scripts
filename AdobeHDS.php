@@ -663,9 +663,13 @@
                       continue;
                     }
 
-                  // Increase segment number if current fragment is not available in this segment range
-                  if (($this->segNum > 1) and ($fragNum > ($segNum * $this->fragsPerSeg)))
-                      $segNum++;
+                  /* Increase or decrease segment number if current fragment is not available */
+                  /* in selected segment range                                                */
+                  if ($this->segNum > 1)
+                      if ($fragNum > ($segNum * $this->fragsPerSeg))
+                          $segNum++;
+                      else if ($fragNum <= (($segNum - 1) * $this->fragsPerSeg))
+                          $segNum--;
 
                   DebugLog("Adding fragment $fragNum to download queue");
                   $cc->addDownload("$this->fragUrl" . "Seg$segNum" . "-Frag$fragNum$this->auth", "$this->baseFilename$fragNum");
