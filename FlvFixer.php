@@ -14,8 +14,9 @@
     {
       protected static $ACCEPTED = array(
           0 => array(
-              'help'  => 'displays this help',
-              'debug' => 'show debug output'
+              'help'   => 'displays this help',
+              'debug'  => 'show debug output',
+              'nometa' => 'do not save metadata in repaired file'
           ),
           1 => array(
               'in'  => 'input filename of flv file to be repaired',
@@ -168,6 +169,7 @@
   $audio        = false;
   $baseTS       = false;
   $debug        = false;
+  $metadata     = true;
   $video        = false;
   $prevTagSize  = 4;
   $tagHeaderLen = 11;
@@ -186,6 +188,8 @@
     }
   if ($cli->getParam('debug'))
       $debug = true;
+  if ($cli->getParam('nometa'))
+      $metadata = false;
   if ($cli->getParam('in'))
       $in = $cli->getParam('in');
   else
@@ -359,9 +363,12 @@
                   $video = true;
               break;
           case SCRIPT_DATA:
-              $pMetaTagPos = ftell($flvOut);
-              fwrite($flvOut, $flvTag, $totalTagLen);
-              DebugLog(sprintf($format . "%-16s", "META", $packetTS, 0, $packetSize, $pMetaTagPos));
+              if ($metadata)
+                {
+                  $pMetaTagPos = ftell($flvOut);
+                  fwrite($flvOut, $flvTag, $totalTagLen);
+                  DebugLog(sprintf($format . "%-16s", "META", $packetTS, 0, $packetSize, $pMetaTagPos));
+                }
               break;
       }
       $filePos += $totalTagLen;
