@@ -375,9 +375,9 @@
         {
           $status = $cc->get($manifest);
           if ($status == 403)
-              die("Access Denied! Unable to download manifest.");
+              die(sprintf($GLOBALS['line'], "Access Denied! Unable to download manifest."));
           else if ($status != 200)
-              die("Unable to download manifest");
+              die(sprintf($GLOBALS['line'], "Unable to download manifest"));
           $xml       = simplexml_load_string(trim($cc->response));
           $namespace = $xml->getDocNamespaces();
           $namespace = $namespace[''];
@@ -396,7 +396,7 @@
                   if (strncasecmp($this->bootstrapUrl, "http", 4) != 0)
                       $this->bootstrapUrl = "$this->baseUrl/$this->bootstrapUrl";
                   if ($cc->get($this->bootstrapUrl) != 200)
-                      die("Failed to get bootstrap info");
+                      die(sprintf($GLOBALS['line'], "Failed to get bootstrap info"));
                   $this->media[$bitrate]['bootstrap'] = $cc->response;
                 }
               else
@@ -454,7 +454,7 @@
           if ($boxType == "abst")
               $this->ParseBootstrapBox($bootstrapInfo, $pos);
           else
-              die("Failed to parse bootstrap info");
+              die(sprintf($GLOBALS['line'], "Failed to parse bootstrap info"));
         }
 
       function UpdateBootstrapInfo($cc, $bootstrapUrl)
@@ -466,13 +466,13 @@
               $bootstrapPos = 0;
               DebugLog("Updating bootstrap info, Available fragments: $this->fragCount");
               if ($cc->get($bootstrapUrl) != 200)
-                  die("Failed to refresh bootstrap info");
+                  die(sprintf($GLOBALS['line'], "Failed to refresh bootstrap info"));
               $bootstrapInfo = $cc->response;
               ReadBoxHeader($bootstrapInfo, $bootstrapPos, $boxType, $boxSize);
               if ($boxType == "abst")
                   $this->ParseBootstrapBox($bootstrapInfo, $bootstrapPos);
               else
-                  die("Failed to parse bootstrap info");
+                  die(sprintf($GLOBALS['line'], "Failed to parse bootstrap info"));
               DebugLog("Update complete, Available fragments: $this->fragCount");
               if ($fragNum == $this->fragCount)
                 {
@@ -692,7 +692,7 @@
                                   else
                                       $this->DecodeFragment($download['response'], $fragNum, $flv);
                                   if ($GLOBALS['duration'] and ($this->duration >= $GLOBALS['duration']))
-                                      die("\nFinished recording $this->duration seconds of content.\n");
+                                      die(sprintf("\n" . $GLOBALS['line'], "Finished recording $this->duration seconds of content."));
 
                                   // Update bootstrap info after successful download of last known fragment
                                   if ($fragNum == $this->fragCount)
@@ -709,7 +709,7 @@
                             }
                         }
                       else if ($download['status'] == 403)
-                          die("Access Denied! Unable to download fragments.");
+                          die(sprintf($GLOBALS['line'], "Access Denied! Unable to download fragments."));
                       else if ($download['status'] === false)
                         {
                           DebugLog("Fragment " . $download['id'] . " failed to download");
@@ -833,7 +833,7 @@
           $fragLen = strlen($frag);
           if (!$this->VerifyFragment($frag))
             {
-              echo "Skipping fragment number $fragNum\n";
+              printf($GLOBALS['line'], "Skipping fragment number $fragNum");
               return false;
             }
 
@@ -854,7 +854,7 @@
               $packetTS   = ($packetTS | (ReadByte($frag, $fragPos + 7) << 24));
               if ($packetTS & 0x80000000)
                 {
-                  $packetTS = ($packetTS + 0x7FFFFFFF) & 0x7FFFFFFF;
+                  $packetTS &= 0x7FFFFFFF;
                   $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
                 }
               if (($this->baseTS === false) and (($packetType == AUDIO) or ($packetType == VIDEO)))
@@ -1123,7 +1123,7 @@
 
       $flv = fopen($outFile, "w+b");
       if (!$flv)
-          die("Failed to open " . $outFile);
+          die(sprintf($GLOBALS['line'], "Failed to open " . $outFile));
       fwrite($flv, $flvHeader, $flvHeaderLen);
       $f4f->WriteMetadata($flv);
       return $flv;
@@ -1167,6 +1167,7 @@
   $flvHeader    = pack("H*", "464c5601050000000900000000");
   $flvHeaderLen = strlen($flvHeader);
   $format       = " %-8s%-16s%-16s%-8s";
+  $line         = "%-79s\n";
   $baseFilename = "";
   $debug        = false;
   $duration     = 0;
@@ -1185,7 +1186,7 @@
   foreach ($extensions as $extension)
     {
       if (!extension_loaded($extension))
-          die("You don't have $extension extension installed. please install it before continuing.");
+          die(sprintf($GLOBALS['line'], "You don't have $extension extension installed. please install it before continuing."));
     }
 
   // Initialize classes
@@ -1273,7 +1274,7 @@
           break;
       $fragNum++;
     }
-  echo "Found $fragCount fragments\n";
+  printf($GLOBALS['line'], "Found $fragCount fragments");
   $fragNum = $f4f->fragNum;
 
   // Write flv header and metadata
@@ -1294,7 +1295,7 @@
   fclose($flv);
   $timeEnd   = microtime(true);
   $timeTaken = sprintf("%.2f", $timeEnd - $timeStart);
-  echo "Joined $fragCount fragments in $timeTaken seconds\n";
+  printf($GLOBALS['line'], "Joined $fragCount fragments in $timeTaken seconds");
 
   // Delete fragments after processing
   if ($delete)
@@ -1304,5 +1305,5 @@
               unlink($baseFilename . $i . $fileExt);
         }
 
-  echo "Finished\n";
+  printf($GLOBALS['line'], "Finished");
 ?>
