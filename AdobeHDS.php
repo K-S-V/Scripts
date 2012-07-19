@@ -132,9 +132,8 @@
       function cURL($cookies = true, $cookie = 'Cookies.txt', $compression = 'gzip', $proxy = '')
         {
           $this->headers[]   = 'Accept: image/gif, image/x-bitmap, image/jpeg, image/pjpeg';
-          $this->headers[]   = 'Connection: Keep-Alive';
           $this->headers[]   = 'Content-type: application/x-www-form-urlencoded;charset=UTF-8';
-          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:13.0) Gecko/20100101 Firefox/13.0.1';
+          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:14.0) Gecko/20100101 Firefox/14.0.1';
           $this->compression = $compression;
           $this->proxy       = $proxy;
           $this->fragProxy   = false;
@@ -147,9 +146,7 @@
       function cookie($cookie_file)
         {
           if (file_exists($cookie_file))
-            {
               $this->cookie_file = $cookie_file;
-            }
           else
             {
               $file = fopen($cookie_file, 'w') or $this->error('The cookie file could not be opened. Make sure this directory has the correct permissions');
@@ -278,10 +275,8 @@
               while ($info = curl_multi_info_read($this->mh))
                 {
                   foreach ($this->ch as $download)
-                    {
                       if ($download['ch'] == $info['handle'])
                           break;
-                    }
                   $info         = curl_getinfo($download['ch']);
                   $array['id']  = $download['id'];
                   $array['url'] = $download['url'];
@@ -531,9 +526,7 @@
           $qualityEntryCount = ReadByte($asrt, $pos + 4);
           $pos += 5;
           for ($i = 0; $i < $qualityEntryCount; $i++)
-            {
               $qualitySegmentUrlModifiers[$i] = ReadString($asrt, $pos);
-            }
           $segCount = ReadInt32($asrt, $pos);
           $pos += 4;
           DebugLog(sprintf("%s:\n\n %-8s%-10s", "Segment Entries", "Number", "Fragments"));
@@ -547,12 +540,11 @@
               DebugLog(sprintf(" %-8s%-10s", $segEntry['firstSegment'], $segEntry['fragmentsPerSegment']));
             }
           DebugLog("");
-          ksort($this->segTable, SORT_NUMERIC);
           $lastSegment     = end($this->segTable);
           $this->fragCount = $lastSegment['fragmentsPerSegment'];
 
-          // Use fragment table in case of single segment
-          if ($this->live and ($lastSegment['firstSegment'] > 1))
+          // Use segment table in case of multiple segments
+          if ($this->live and (count($this->segTable) > 1))
             {
               $secondLastSegment = prev($this->segTable);
               if ($this->fragNum === false)
@@ -576,9 +568,7 @@
           $qualityEntryCount = ReadByte($afrt, $pos + 8);
           $pos += 9;
           for ($i = 0; $i < $qualityEntryCount; $i++)
-            {
               $qualitySegmentUrlModifiers[$i] = ReadString($afrt, $pos);
-            }
           $fragEntries = ReadInt32($afrt, $pos);
           $pos += 4;
           DebugLog(sprintf("%s:\n\n %-8s%-16s%-16s%-16s", "Fragment Entries", "Number", "Timestamp", "Duration", "Discontinuity"));
@@ -596,19 +586,24 @@
               DebugLog(sprintf(" %-8s%-16s%-16s%-16s", $fragEntry['firstFragment'], $fragEntry['firstFragmentTimestamp'], $fragEntry['fragmentDuration'], $fragEntry['discontinuityIndicator']));
             }
           DebugLog("");
-          ksort($this->fragTable, SORT_NUMERIC);
 
           // Use fragment table in case of single segment
-          if ($this->live and ($this->segNum == 1))
+          if (count($this->segTable) == 1)
             {
-              $lastFragment = end($this->fragTable);
-              if ($this->fragNum === false)
+              $firstFragment = reset($this->fragTable);
+              $lastFragment  = end($this->fragTable);
+              if ($this->live)
                 {
-                  $this->fragNum   = $lastFragment['firstFragment'] - 2;
-                  $this->fragCount = $lastFragment['firstFragment'];
+                  if ($this->fragNum === false)
+                    {
+                      $this->fragNum   = $lastFragment['firstFragment'] - 2;
+                      $this->fragCount = $lastFragment['firstFragment'];
+                    }
+                  else
+                      $this->fragCount = $lastFragment['firstFragment'];
                 }
-              else
-                  $this->fragCount = $lastFragment['firstFragment'];
+              else if ($this->fragNum === false)
+                  $this->fragNum = $firstFragment['firstFragment'] - 1;
             }
         }
 
@@ -1188,10 +1183,8 @@
       "SimpleXML"
   );
   foreach ($extensions as $extension)
-    {
       if (!extension_loaded($extension))
           die(sprintf($GLOBALS['line'], "You don't have $extension extension installed. please install it before continuing."));
-    }
 
   // Initialize classes
   $cc  = new cURL();
@@ -1304,10 +1297,8 @@
   // Delete fragments after processing
   if ($delete)
       for ($i = 1; $i <= $fragCount; $i++)
-        {
           if (file_exists($baseFilename . $i . $fileExt))
               unlink($baseFilename . $i . $fileExt);
-        }
 
   printf($GLOBALS['line'], "Finished");
 ?>
