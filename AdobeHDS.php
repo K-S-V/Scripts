@@ -29,6 +29,7 @@
               'parallel'  => 'number of fragments to download simultaneously',
               'proxy'     => 'proxy for downloading of manifest',
               'quality'   => 'selected quality level (low|medium|high) or exact bitrate',
+              'start'     => 'start from specified fragment',
               'useragent' => 'User-Agent to use for emulation of browser requests'
           )
       );
@@ -352,7 +353,6 @@
           $this->fragNum           = false;
           $this->fragCount         = 0;
           $this->fragsPerSeg       = 0;
-          $this->fragUrl           = "";
           $this->discontinuity     = "";
           $this->prevAudioTS       = -1;
           $this->prevVideoTS       = -1;
@@ -366,53 +366,104 @@
           $this->AAC_HeaderWritten = false;
         }
 
-      function ParseManifest($cc, $manifest)
+      function GetManifest($cc, $manifest)
         {
           $status = $cc->get($manifest);
           if ($status == 403)
               die(sprintf($GLOBALS['line'], "Access Denied! Unable to download manifest."));
           else if ($status != 200)
               die(sprintf($GLOBALS['line'], "Unable to download manifest"));
-          $xml       = simplexml_load_string(trim($cc->response));
+          $xml = simplexml_load_string(trim($cc->response));
+          if (!$xml)
+              die(sprintf($GLOBALS['line'], "Failed to load xml"));
           $namespace = $xml->getDocNamespaces();
           $namespace = $namespace[''];
           $xml->registerXPathNamespace("ns", $namespace);
-          $streams = $xml->xpath("/ns:manifest/ns:media");
-          foreach ($streams as $stream)
-            {
-              $stream    = (array) $stream;
-              $stream    = array_change_key_case($stream['@attributes']);
-              $bitrate   = isset($stream['bitrate']) ? (int) $stream['bitrate'] : 1;
-              $streamId  = isset($stream[strtolower('streamId')]) ? GetString($stream[strtolower('streamId')]) : "";
-              $bootstrap = $xml->xpath("/ns:manifest/ns:bootstrapInfo[@id='" . $stream[strtolower('bootstrapInfoId')] . "']");
-              if (isset($bootstrap[0]['url']))
+          return $xml;
+        }
+
+      function ParseManifest($cc, $manifest)
+        {
+          echo sprintf($GLOBALS['line'], "Processing manifest info. . .");
+          $xml     = $this->GetManifest($cc, $manifest);
+          $baseUrl = $xml->xpath("/ns:manifest/ns:baseURL");
+          if (isset($baseUrl[0]))
+              $baseUrl = GetString($baseUrl[0]);
+          else
+              $baseUrl = "";
+          $url = $xml->xpath("/ns:manifest/ns:media[@*]");
+          if (isset($url[0]['href']))
+              foreach ($url as $manifest)
                 {
-                  $this->bootstrapUrl = GetString($bootstrap[0]['url']);
-                  if (strncasecmp($this->bootstrapUrl, "http", 4) != 0)
-                      $this->bootstrapUrl = "$this->baseUrl/$this->bootstrapUrl";
-                  if ($cc->get($this->bootstrapUrl) != 200)
-                      die(sprintf($GLOBALS['line'], "Failed to get bootstrap info"));
-                  $this->media[$bitrate]['bootstrap'] = $cc->response;
+                  $bitrate                        = (int) $manifest['bitrate'];
+                  $manifests[$bitrate]['bitrate'] = $bitrate;
+                  $manifests[$bitrate]['url']     = $baseUrl . GetString($manifest['href']);
+                  $manifests[$bitrate]['xml']     = $this->GetManifest($cc, $manifests[$bitrate]['url']);
                 }
-              else
-                  $this->media[$bitrate]['bootstrap'] = base64_decode(GetString($bootstrap[0]));
-              $metadata = $xml->xpath("/ns:manifest/ns:media[@streamId='" . $streamId . "']/ns:metadata");
-              if (isset($metadata[0]))
-                  $this->media[$bitrate]['metadata'] = GetString($metadata[0]);
-              else
-                  $this->media[$bitrate]['metadata'] = "";
-              $this->media[$bitrate]['url'] = GetString($stream['url']);
+          else
+            {
+              $manifests[0]['bitrate'] = 0;
+              $manifests[0]['url']     = $manifest;
+              $manifests[0]['xml']     = $xml;
+            }
+
+          foreach ($manifests as $manifest)
+            {
+              $xml     = $manifest['xml'];
+              $streams = $xml->xpath("/ns:manifest/ns:media");
+              foreach ($streams as $stream)
+                {
+                  $stream  = (array) $stream;
+                  $stream  = array_change_key_case($stream['@attributes']);
+                  $bitrate = isset($stream['bitrate']) ? (int) $stream['bitrate'] : $manifest['bitrate'];
+                  $mediaEntry =& $this->media[$bitrate];
+                  $streamId = isset($stream[strtolower('streamId')]) ? GetString($stream[strtolower('streamId')]) : "";
+
+                  // Extract baseUrl from manifest url
+                  $baseUrl = $manifest['url'];
+                  if (strpos($baseUrl, '?') !== false)
+                    {
+                      $baseUrl = substr($baseUrl, 0, strpos($baseUrl, '?'));
+                      $baseUrl = substr($baseUrl, 0, strrpos($baseUrl, '/'));
+                    }
+                  else
+                      $baseUrl = substr($baseUrl, 0, strrpos($baseUrl, '/'));
+                  $mediaEntry['baseUrl'] = $baseUrl;
+
+                  $bootstrap = $xml->xpath("/ns:manifest/ns:bootstrapInfo[@id='" . $stream[strtolower('bootstrapInfoId')] . "']");
+                  if (isset($bootstrap[0]['url']))
+                    {
+                      $bootstrapUrl = GetString($bootstrap[0]['url']);
+                      if (strncasecmp($bootstrapUrl, "http", 4) != 0)
+                          $bootstrapUrl = $mediaEntry['baseUrl'] . "/$bootstrapUrl";
+                      $mediaEntry['bootstrapUrl'] = $bootstrapUrl;
+                      if ($cc->get($bootstrapUrl) != 200)
+                          die(sprintf($GLOBALS['line'], "Failed to get bootstrap info"));
+                      $mediaEntry['bootstrap'] = $cc->response;
+                    }
+                  else
+                      $mediaEntry['bootstrap'] = base64_decode(GetString($bootstrap[0]));
+                  $metadata = $xml->xpath("/ns:manifest/ns:media[@streamId='" . $streamId . "']/ns:metadata");
+                  if (isset($metadata[0]))
+                      $mediaEntry['metadata'] = base64_decode(GetString($metadata[0]));
+                  else
+                      $mediaEntry['metadata'] = "";
+                  $mediaEntry['url'] = GetString($stream['url']);
+                }
             }
 
           // Available qualities
           krsort($this->media, SORT_NUMERIC);
+          echo "Available Bitrates:";
           DebugLog("Manifest Entries:\n");
           DebugLog(sprintf(" %-8s%s", "Bitrate", "URL"));
           for ($i = 0; $i < count($this->media); $i++)
             {
               $key = KeyName($this->media, $i);
+              echo " $key";
               DebugLog(sprintf(" %-8d%s", $key, $this->media[$key]['url']));
             }
+          echo "\n";
           DebugLog("");
 
           // Quality selection
@@ -434,7 +485,7 @@
               }
               while ($this->quality >= 0)
                 {
-                  if ($key = KeyName($this->media, $this->quality))
+                  if (($key = KeyName($this->media, $this->quality)) !== NULL)
                     {
                       $this->media = $this->media[$key];
                       break;
@@ -444,6 +495,9 @@
                 }
             }
 
+          $this->baseUrl = $this->media['baseUrl'];
+          if (isset($this->media['bootstrapUrl']))
+              $this->bootstrapUrl = $this->media['bootstrapUrl'];
           $bootstrapInfo = $this->media['bootstrap'];
           ReadBoxHeader($bootstrapInfo, $pos, $boxType, $boxSize);
           if ($boxType == "abst")
@@ -609,18 +663,20 @@
 
       function DownloadFragments($cc, $manifest)
         {
-          // Extract baseUrl from manifest url
-          if (strpos($manifest, '?') !== false)
-            {
-              $this->baseUrl = substr($manifest, 0, strpos($manifest, '?'));
-              $this->baseUrl = substr($this->baseUrl, 0, strrpos($this->baseUrl, '/'));
-            }
-          else
-              $this->baseUrl = substr($manifest, 0, strrpos($manifest, '/'));
-
           $this->ParseManifest($cc, $manifest);
           $segNum  = $this->segNum;
           $fragNum = $this->fragNum;
+          if ($GLOBALS['start'])
+            {
+              if ($segNum > 1)
+                  if ($GLOBALS['start'] % $this->fragsPerSeg)
+                      $segNum = (int) ($GLOBALS['start'] / $this->fragsPerSeg + 1);
+                  else
+                      $segNum = (int) ($GLOBALS['start'] / $this->fragsPerSeg);
+              $fragNum       = $GLOBALS['start'] - 1;
+              $this->segNum  = $segNum;
+              $this->fragNum = $fragNum;
+            }
 
           // Extract baseFilename
           if (substr($this->media['url'], -1) == '/')
@@ -644,7 +700,7 @@
               while ((count($cc->ch) < $this->parallel) and ($fragNum < $this->fragCount))
                 {
                   $fragNum += 1;
-                  echo "Downloading $fragNum/$this->fragCount fragments\r";
+                  echo sprintf("%-79s", "Downloading $fragNum/$this->fragCount fragments") . "\r";
                   if (in_array_field($fragNum, "firstFragment", $this->fragTable, true))
                       $this->discontinuity = value_in_array_field($fragNum, "firstFragment", "discontinuityIndicator", $this->fragTable, true);
                   if (($this->discontinuity == 1) or ($this->discontinuity == 3))
@@ -707,14 +763,14 @@
                               $cc->addDownload($download['url'], $download['id']);
                             }
                         }
-                      else if ($download['status'] == 403)
-                          die(sprintf($GLOBALS['line'], "Access Denied! Unable to download fragments."));
                       else if ($download['status'] === false)
                         {
                           DebugLog("Fragment " . $download['id'] . " failed to download");
                           DebugLog("Adding fragment " . $download['id'] . " to download queue");
                           $cc->addDownload($download['url'], $download['id']);
                         }
+                      else if ($download['status'] == 403)
+                          die(sprintf($GLOBALS['line'], "Access Denied! Unable to download fragments."));
                       else
                         {
                           DebugLog("Fragment " . $download['id'] . " doesn't exist, Status: " . $download['status']);
@@ -797,8 +853,7 @@
         {
           if (isset($this->media) and $this->media['metadata'])
             {
-              $this->media['metadata'] = base64_decode($this->media['metadata']);
-              $metadataSize            = strlen($this->media['metadata']);
+              $metadataSize = strlen($this->media['metadata']);
               WriteByte($metadata, 0, SCRIPT_DATA);
               WriteInt24($metadata, 1, $metadataSize);
               WriteInt24($metadata, 4, 0);
@@ -858,6 +913,11 @@
                 }
               if (($this->baseTS === false) and (($packetType == AUDIO) or ($packetType == VIDEO)))
                   $this->baseTS = $packetTS;
+              if ($this->baseTS > 1000)
+                {
+                  $packetTS -= $this->baseTS;
+                  $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
+                }
               $totalTagLen = $this->tagHeaderLen + $packetSize + $this->prevTagSize;
               switch ($packetType)
               {
@@ -990,9 +1050,9 @@
                         }
                       else
                           DebugLog(sprintf("%s\n" . $this->format, "Skipping video packet in fragment $fragNum", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
-                      break;
                       if (!$this->video)
                           $this->video = true;
+                      break;
                   case SCRIPT_DATA:
                       break;
                   default:
@@ -1001,7 +1061,7 @@
               $fragPos += $totalTagLen;
             }
           if ($this->baseTS !== false)
-              $this->duration = round(($packetTS - $this->baseTS) / 1000, 0);
+              $this->duration = round($packetTS / 1000, 0);
           if ($flv)
               return true;
           else
@@ -1124,7 +1184,8 @@
       if (!$flv)
           die(sprintf($GLOBALS['line'], "Failed to open " . $outFile));
       fwrite($flv, $flvHeader, $flvHeaderLen);
-      $f4f->WriteMetadata($flv);
+      if (!$f4f->live)
+          $f4f->WriteMetadata($flv);
       return $flv;
     }
 
@@ -1175,6 +1236,7 @@
   $fragCount    = 0;
   $fragNum      = 0;
   $outDir       = "";
+  $start        = 0;
 
   // Check for required extensions
   $extensions = array(
@@ -1225,6 +1287,8 @@
       $cc->proxy = $cli->getParam('proxy');
   if ($cli->getParam('quality'))
       $f4f->quality = $cli->getParam('quality');
+  if ($cli->getParam('start'))
+      $start = $cli->getParam('start');
   if ($cli->getParam('useragent'))
       $cc->user_agent = $cli->getParam('useragent');
   if ($cli->getParam('manifest'))
