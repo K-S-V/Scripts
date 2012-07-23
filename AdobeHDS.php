@@ -23,6 +23,7 @@
           1 => array(
               'auth'      => 'authentication string for fragment requests',
               'duration'  => 'stop recording after specified number of seconds',
+              'filesize'  => 'split live recording in chunks of specified MB',
               'fragments' => 'base filename for fragments',
               'manifest'  => 'manifest file for downloading of fragments',
               'outdir'    => 'destination folder for output file',
@@ -58,7 +59,7 @@
                     }
                   else if (!$doubleParam && !$isparam)
                     {
-                      if (!$GLOBALS['baseFilename'])
+                      if (isset($GLOBALS['baseFilename']) and (!$GLOBALS['baseFilename']))
                           $GLOBALS['baseFilename'] = $arg;
                       else
                         {
@@ -325,8 +326,8 @@
 
   class F4F
     {
-      var $audio, $auth, $baseFilename, $baseTS, $bootstrapUrl, $baseUrl, $debug, $duration, $format;
-      var $live, $media, $parallel, $quality, $rename, $video;
+      var $audio, $auth, $baseFilename, $baseTS, $bootstrapUrl, $baseUrl, $debug, $duration, $filesize;
+      var $format, $live, $media, $parallel, $quality, $rename, $video;
       var $prevTagSize, $tagHeaderLen;
       var $segTable, $fragTable, $segNum, $fragNum, $fragCount, $fragsPerSeg, $fragUrl, $discontinuity;
       var $prevAudioTS, $prevVideoTS, $pAudioTagLen, $pVideoTagLen, $pAudioTagPos, $pVideoTagPos;
@@ -334,26 +335,32 @@
 
       public function __construct()
         {
+          $this->auth          = "";
+          $this->baseFilename  = "";
+          $this->bootstrapUrl  = "";
+          $this->debug         = false;
+          $this->duration      = 0;
+          $this->format        = "";
+          $this->live          = false;
+          $this->parallel      = 8;
+          $this->quality       = "high";
+          $this->rename        = false;
+          $this->segNum        = 1;
+          $this->fragNum       = false;
+          $this->fragCount     = 0;
+          $this->fragsPerSeg   = 0;
+          $this->discontinuity = "";
+          $this->InitDecoder();
+        }
+
+      function InitDecoder()
+        {
           $this->audio             = false;
-          $this->auth              = "";
-          $this->baseFilename      = "";
           $this->baseTS            = false;
-          $this->bootstrapUrl      = "";
-          $this->debug             = false;
-          $this->duration          = 0;
-          $this->format            = "";
-          $this->live              = false;
-          $this->parallel          = 8;
-          $this->quality           = "high";
-          $this->rename            = false;
+          $this->filesize          = 0;
           $this->video             = false;
           $this->prevTagSize       = 4;
           $this->tagHeaderLen      = 11;
-          $this->segNum            = 1;
-          $this->fragNum           = false;
-          $this->fragCount         = 0;
-          $this->fragsPerSeg       = 0;
-          $this->discontinuity     = "";
           $this->prevAudioTS       = -1;
           $this->prevVideoTS       = -1;
           $this->pAudioTagLen      = 0;
@@ -384,7 +391,7 @@
 
       function ParseManifest($cc, $manifest)
         {
-          echo sprintf($GLOBALS['line'], "Processing manifest info. . .");
+          echo sprintf($GLOBALS['line'], "Processing manifest info....");
           $xml     = $this->GetManifest($cc, $manifest);
           $baseUrl = $xml->xpath("/ns:manifest/ns:baseURL");
           if (isset($baseUrl[0]))
@@ -393,6 +400,7 @@
               $baseUrl = "";
           $url = $xml->xpath("/ns:manifest/ns:media[@*]");
           if (isset($url[0]['href']))
+            {
               foreach ($url as $manifest)
                 {
                   $bitrate                        = (int) $manifest['bitrate'];
@@ -400,6 +408,7 @@
                   $manifests[$bitrate]['url']     = $baseUrl . GetString($manifest['href']);
                   $manifests[$bitrate]['xml']     = $this->GetManifest($cc, $manifests[$bitrate]['url']);
                 }
+            }
           else
             {
               $manifests[0]['bitrate'] = 0;
@@ -661,19 +670,25 @@
             }
         }
 
-      function DownloadFragments($cc, $manifest)
+      function DownloadFragments($cc, $manifest, $opt = array())
         {
+          isset($opt['start']) ? $start = $opt['start'] : $start = 0;
+          isset($opt['duration']) ? $tDuration = $opt['duration'] : $tDuration = 0;
+          isset($opt['filesize']) ? $filesize = $opt['filesize'] : $filesize = 0;
+
           $this->ParseManifest($cc, $manifest);
-          $segNum  = $this->segNum;
-          $fragNum = $this->fragNum;
-          if ($GLOBALS['start'])
+          $segNum    = $this->segNum;
+          $fragNum   = $this->fragNum;
+          $duration  = 0;
+          $fileCount = 1;
+          if ($start)
             {
               if ($segNum > 1)
-                  if ($GLOBALS['start'] % $this->fragsPerSeg)
-                      $segNum = (int) ($GLOBALS['start'] / $this->fragsPerSeg + 1);
+                  if ($start % $this->fragsPerSeg)
+                      $segNum = (int) ($start / $this->fragsPerSeg + 1);
                   else
-                      $segNum = (int) ($GLOBALS['start'] / $this->fragsPerSeg);
-              $fragNum       = $GLOBALS['start'] - 1;
+                      $segNum = (int) ($start / $this->fragsPerSeg);
+              $fragNum       = $start - 1;
               $this->segNum  = $segNum;
               $this->fragNum = $fragNum;
             }
@@ -687,7 +702,6 @@
               $this->baseFilename = substr($this->baseFilename, strrpos($this->baseFilename, '/') + 1) . "Seg" . $segNum . "-Frag";
           else
               $this->baseFilename .= "Seg" . $segNum . "-Frag";
-          $GLOBALS['baseFilename'] = $this->baseFilename;
 
           if (strncasecmp($this->media['url'], "http", 4) == 0)
               $this->fragUrl = $this->media['url'];
@@ -738,16 +752,26 @@
                               DebugLog("Fragment " . $download['id'] . " successfully downloaded");
                               if ($this->live)
                                 {
-                                  if (!isset($flv))
+                                  if (!isset($opt['flv']))
                                     {
-                                      $flvData = $this->DecodeFragment($download['response'], $fragNum);
-                                      $flv     = WriteFlvFile($this->baseFilename . ".flv", $this->audio, $this->video);
-                                      fwrite($flv, $flvData, strlen($flvData));
+                                      $opt['debug'] = false;
+                                      $this->InitDecoder();
+                                      $this->DecodeFragment($download['response'], $fragNum, $opt);
+                                      $opt['flv']   = WriteFlvFile("$this->baseFilename-" . $fileCount++ . ".flv", $this->audio, $this->video);
+                                      $opt['debug'] = $this->debug;
+                                      $this->InitDecoder();
+                                      $this->DecodeFragment($download['response'], $fragNum, $opt);
                                     }
                                   else
-                                      $this->DecodeFragment($download['response'], $fragNum, $flv);
-                                  if ($GLOBALS['duration'] and ($this->duration >= $GLOBALS['duration']))
-                                      die(sprintf("\n" . $GLOBALS['line'], "Finished recording $this->duration seconds of content."));
+                                      $this->DecodeFragment($download['response'], $fragNum, $opt);
+                                  if ($tDuration and (($duration + $this->duration) >= $tDuration))
+                                      die(sprintf("\n" . $GLOBALS['line'], "Finished recording " . ($duration + $this->duration) . " seconds of content."));
+                                  if ($filesize and ($this->filesize >= $filesize))
+                                    {
+                                      $duration += $this->duration;
+                                      fclose($opt['flv']);
+                                      unset($opt['flv']);
+                                    }
 
                                   // Update bootstrap info after successful download of last known fragment
                                   if ($fragNum == $this->fragCount)
@@ -878,11 +902,14 @@
           WriteByte($frag, $fragPos + 7, ($packetTS & 0xFF000000) >> 24);
         }
 
-      function DecodeFragment($frag, $fragNum, $flv = false)
+      function DecodeFragment($frag, $fragNum, $opt = array())
         {
           $flvData = "";
           $fragLen = 0;
           $fragPos = 0;
+
+          isset($opt['flv']) ? $flv = $opt['flv'] : $flv = false;
+          isset($opt['debug']) ? $debug = $opt['debug'] : $debug = $this->debug;
 
           $fragLen = strlen($frag);
           if (!$this->VerifyFragment($frag))
@@ -899,7 +926,8 @@
               $fragPos += $boxSize;
             }
 
-          DebugLog(sprintf("\nFragment %d:\n" . $this->format . "%-16s", $fragNum, "Type", "CurrentTS", "PreviousTS", "Size", "Position"));
+          if ($debug)
+              DebugLog(sprintf("\nFragment %d:\n" . $this->format . "%-16s", $fragNum, "Type", "CurrentTS", "PreviousTS", "Size", "Position"));
           while ($fragPos < $fragLen)
             {
               $packetType = ReadByte($frag, $fragPos);
@@ -933,19 +961,22 @@
                                 {
                                   if ($this->AAC_HeaderWritten)
                                     {
-                                      DebugLog(sprintf("%s\n" . $this->format, "Skipping AAC sequence header", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize));
+                                      if ($debug)
+                                          DebugLog(sprintf("%s\n" . $this->format, "Skipping AAC sequence header", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize));
                                       break;
                                     }
                                   else
                                     {
-                                      DebugLog("Writing AAC sequence header");
+                                      if ($debug)
+                                          DebugLog("Writing AAC sequence header");
                                       $this->AAC_HeaderWritten = true;
                                       $this->prevAAC_Header    = true;
                                     }
                                 }
                               else if (!$this->AAC_HeaderWritten)
                                 {
-                                  DebugLog(sprintf("%s\n" . $this->format, "Discarding audio packet received before AAC sequence header", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize));
+                                  if ($debug)
+                                      DebugLog(sprintf("%s\n" . $this->format, "Discarding audio packet received before AAC sequence header", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize));
                                   break;
                                 }
                             }
@@ -954,7 +985,8 @@
                               // Check for packets with non-monotonic audio timestamps and fix them
                               if (!$this->prevAAC_Header and ($packetTS <= $this->prevAudioTS))
                                 {
-                                  DebugLog(sprintf("%s\n" . $this->format, "Fixing audio timestamp", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize));
+                                  if ($debug)
+                                      DebugLog(sprintf("%s\n" . $this->format, "Fixing audio timestamp", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize));
                                   $packetTS += TIMECODE_DURATION + ($this->prevAudioTS - $packetTS);
                                   $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
                                 }
@@ -964,22 +996,22 @@
                                 {
                                   $pAudioTagPos = ftell($flv);
                                   fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
-                                  if ($this->debug)
+                                  if ($debug)
                                       DebugLog(sprintf($this->format . "%-16s", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize, $pAudioTagPos));
                                 }
                               else
                                 {
                                   $flvData .= substr($frag, $fragPos, $totalTagLen);
-                                  if ($this->debug)
+                                  if ($debug)
                                       DebugLog(sprintf($this->format, "AUDIO", $packetTS, $this->prevAudioTS, $packetSize));
                                 }
                               $this->prevAudioTS = $packetTS;
                               $pAudioTagLen      = $totalTagLen;
                             }
-                          else
+                          else if ($debug)
                               DebugLog(sprintf("%s\n" . $this->format, "Skipping small sized audio packet", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize));
                         }
-                      else
+                      else if ($debug)
                           DebugLog(sprintf("%s\n" . $this->format, "Skipping audio packet in fragment $fragNum", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize));
                       if (!$this->audio)
                           $this->audio = true;
@@ -992,7 +1024,8 @@
                           $CodecID   = $FrameInfo & 0x0F;
                           if ($FrameType == FRAME_TYPE_INFO)
                             {
-                              DebugLog(sprintf("%s\n" . $this->format, "Skipping video info frame", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
+                              if ($debug)
+                                  DebugLog(sprintf("%s\n" . $this->format, "Skipping video info frame", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
                               break;
                             }
                           if ($CodecID == CODEC_ID_AVC)
@@ -1002,19 +1035,22 @@
                                 {
                                   if ($this->AVC_HeaderWritten)
                                     {
-                                      DebugLog(sprintf("%s\n" . $this->format, "Skipping AVC sequence header", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
+                                      if ($debug)
+                                          DebugLog(sprintf("%s\n" . $this->format, "Skipping AVC sequence header", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
                                       break;
                                     }
                                   else
                                     {
-                                      DebugLog("Writing AVC sequence header");
+                                      if ($debug)
+                                          DebugLog("Writing AVC sequence header");
                                       $this->AVC_HeaderWritten = true;
                                       $this->prevAVC_Header    = true;
                                     }
                                 }
                               else if (!$this->AVC_HeaderWritten)
                                 {
-                                  DebugLog(sprintf("%s\n" . $this->format, "Discarding video packet received before AVC sequence header", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
+                                  if ($debug)
+                                      DebugLog(sprintf("%s\n" . $this->format, "Discarding video packet received before AVC sequence header", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
                                   break;
                                 }
                             }
@@ -1023,7 +1059,8 @@
                               // Check for packets with non-monotonic video timestamps and fix them
                               if (!$this->prevAVC_Header and (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType != AVC_SEQUENCE_END)) and ($packetTS <= $this->prevVideoTS))
                                 {
-                                  DebugLog(sprintf("%s\n" . $this->format, "Fixing video timestamp", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
+                                  if ($debug)
+                                      DebugLog(sprintf("%s\n" . $this->format, "Fixing video timestamp", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
                                   $packetTS += TIMECODE_DURATION + ($this->prevVideoTS - $packetTS);
                                   $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
                                 }
@@ -1033,22 +1070,22 @@
                                 {
                                   $pVideoTagPos = ftell($flv);
                                   fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
-                                  if ($this->debug)
+                                  if ($debug)
                                       DebugLog(sprintf($this->format . "%-16s", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize, $pVideoTagPos));
                                 }
                               else
                                 {
                                   $flvData .= substr($frag, $fragPos, $totalTagLen);
-                                  if ($this->debug)
+                                  if ($debug)
                                       DebugLog(sprintf($this->format, "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
                                 }
                               $this->prevVideoTS = $packetTS;
                               $pVideoTagLen      = $totalTagLen;
                             }
-                          else
+                          else if ($debug)
                               DebugLog(sprintf("%s\n" . $this->format, "Skipping small sized video packet", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
                         }
-                      else
+                      else if ($debug)
                           DebugLog(sprintf("%s\n" . $this->format, "Skipping video packet in fragment $fragNum", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
                       if (!$this->video)
                           $this->video = true;
@@ -1060,10 +1097,15 @@
               }
               $fragPos += $totalTagLen;
             }
+          if ($debug)
+              DebugLog("");
           if ($this->baseTS !== false)
               $this->duration = round($packetTS / 1000, 0);
           if ($flv)
+            {
+              $this->filesize = ftell($flv) / (1024 * 1024);
               return true;
+            }
           else
               return $flvData;
         }
@@ -1233,9 +1275,11 @@
   $duration     = 0;
   $delete       = false;
   $fileExt      = ".f4f";
+  $filesize     = 0;
   $fragCount    = 0;
   $fragNum      = 0;
   $outDir       = "";
+  $rename       = false;
   $start        = 0;
 
   // Check for required extensions
@@ -1253,7 +1297,10 @@
   $cli = new CLI();
   $f4f = new F4F();
 
-  $f4f->format = $format;
+  $f4f->baseFilename =& $baseFilename;
+  $f4f->debug =& $debug;
+  $f4f->format =& $format;
+  $f4f->rename =& $rename;
 
   // Process command line options
   if ($cli->getParam('help'))
@@ -1262,10 +1309,7 @@
       exit(0);
     }
   if ($cli->getParam('debug'))
-    {
-      $debug      = true;
-      $f4f->debug = $debug;
-    }
+      $debug = true;
   if ($cli->getParam('delete'))
       $delete = true;
   if ($cli->getParam('fproxy'))
@@ -1274,11 +1318,12 @@
       $f4f->auth = "?" . $cli->getParam('auth');
   if ($cli->getParam('duration'))
       $duration = $cli->getParam('duration');
+  if ($cli->getParam('filesize'))
+      $filesize = $cli->getParam('filesize');
   if ($cli->getParam('fragments'))
-    {
-      $baseFilename      = $cli->getParam('fragments');
-      $f4f->baseFilename = $baseFilename;
-    }
+      $baseFilename = $cli->getParam('fragments');
+  if ($cli->getParam('manifest'))
+      $manifest = $cli->getParam('manifest');
   if ($cli->getParam('outdir'))
       $outDir = $cli->getParam('outdir');
   if ($cli->getParam('parallel'))
@@ -1291,9 +1336,20 @@
       $start = $cli->getParam('start');
   if ($cli->getParam('useragent'))
       $cc->user_agent = $cli->getParam('useragent');
-  if ($cli->getParam('manifest'))
-      $f4f->DownloadFragments($cc, $cli->getParam('manifest'));
-  if ($cli->getParam('rename') or $f4f->rename)
+  if ($cli->getParam('rename'))
+      $rename = $cli->getParam('rename');
+
+  // Download and rename fragments if required
+  if ($manifest)
+    {
+      $opt = array(
+          'start' => $start,
+          'duration' => $duration,
+          'filesize' => $filesize
+      );
+      $f4f->DownloadFragments($cc, $manifest, $opt);
+    }
+  if ($rename)
       $f4f->RenameFragments($baseFilename, $fileExt);
 
   $baseFilename = str_replace('\\', '/', $baseFilename);
@@ -1347,10 +1403,14 @@
   // Process available fragments
   $timeStart = microtime(true);
   DebugLog("Joining Fragments:");
+  $opt = array(
+      'flv' => $flv,
+      'debug' => $debug
+  );
   for ($i = $fragNum + 1; $i <= $fragNum + $fragCount; $i++)
     {
       $frag = file_get_contents($baseFilename . $i . $fileExt);
-      $f4f->DecodeFragment($frag, $i, $flv);
+      $f4f->DecodeFragment($frag, $i, $opt);
       echo "Processed $i fragments\r";
     }
   fclose($flv);
@@ -1360,9 +1420,11 @@
 
   // Delete fragments after processing
   if ($delete)
+    {
       for ($i = 1; $i <= $fragCount; $i++)
           if (file_exists($baseFilename . $i . $fileExt))
               unlink($baseFilename . $i . $fileExt);
+    }
 
   printf($GLOBALS['line'], "Finished");
 ?>
