@@ -22,7 +22,7 @@
           ),
           1 => array(
               'auth'      => 'authentication string for fragment requests',
-              'duration'  => 'stop recording after specified number of seconds',
+              'duration'  => 'stop live recording after specified number of seconds',
               'filesize'  => 'split live recording in chunks of specified MB',
               'fragments' => 'base filename for fragments',
               'manifest'  => 'manifest file for downloading of fragments',
@@ -675,6 +675,7 @@
           isset($opt['start']) ? $start = $opt['start'] : $start = 0;
           isset($opt['duration']) ? $tDuration = $opt['duration'] : $tDuration = 0;
           isset($opt['filesize']) ? $filesize = $opt['filesize'] : $filesize = 0;
+          isset($opt['outdir']) ? $outDir = $opt['outdir'] : $outDir = "";
 
           $this->ParseManifest($cc, $manifest);
           $segNum    = $this->segNum;
@@ -757,7 +758,7 @@
                                       $opt['debug'] = false;
                                       $this->InitDecoder();
                                       $this->DecodeFragment($download['response'], $fragNum, $opt);
-                                      $opt['flv']   = WriteFlvFile("$this->baseFilename-" . $fileCount++ . ".flv", $this->audio, $this->video);
+                                      $opt['flv']   = WriteFlvFile($outDir . "$this->baseFilename-" . $fileCount++ . ".flv", $this->audio, $this->video);
                                       $opt['debug'] = $this->debug;
                                       $this->InitDecoder();
                                       $this->DecodeFragment($download['response'], $fragNum, $opt);
@@ -1099,8 +1100,7 @@
             }
           if ($debug)
               DebugLog("");
-          if ($this->baseTS !== false)
-              $this->duration = round($packetTS / 1000, 0);
+          $this->duration = round($packetTS / 1000, 0);
           if ($flv)
             {
               $this->filesize = ftell($flv) / (1024 * 1024);
@@ -1339,19 +1339,6 @@
   if ($cli->getParam('rename'))
       $rename = $cli->getParam('rename');
 
-  // Download and rename fragments if required
-  if ($manifest)
-    {
-      $opt = array(
-          'start' => $start,
-          'duration' => $duration,
-          'filesize' => $filesize
-      );
-      $f4f->DownloadFragments($cc, $manifest, $opt);
-    }
-  if ($rename)
-      $f4f->RenameFragments($baseFilename, $fileExt);
-
   $baseFilename = str_replace('\\', '/', $baseFilename);
   if ($baseFilename and (substr($baseFilename, -1) != '/') and (substr($baseFilename, -1) != ':'))
     {
@@ -1374,6 +1361,20 @@
         }
     }
   $outFile = $outDir . $outFile;
+
+  // Download and rename fragments if required
+  if ($manifest)
+    {
+      $opt = array(
+          'start' => $start,
+          'duration' => $duration,
+          'filesize' => $filesize,
+          'outdir' => $outDir
+      );
+      $f4f->DownloadFragments($cc, $manifest, $opt);
+    }
+  if ($rename)
+      $f4f->RenameFragments($baseFilename, $fileExt);
 
   // Check for available fragments
   if ($f4f->fragNum)
