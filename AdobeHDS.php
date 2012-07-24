@@ -439,7 +439,10 @@
                       $baseUrl = substr($baseUrl, 0, strrpos($baseUrl, '/'));
                   $mediaEntry['baseUrl'] = $baseUrl;
 
-                  $bootstrap = $xml->xpath("/ns:manifest/ns:bootstrapInfo[@id='" . $stream[strtolower('bootstrapInfoId')] . "']");
+                  if (isset($stream[strtolower('bootstrapInfoId')]))
+                      $bootstrap = $xml->xpath("/ns:manifest/ns:bootstrapInfo[@id='" . $stream[strtolower('bootstrapInfoId')] . "']");
+                  else
+                      $bootstrap = $xml->xpath("/ns:manifest/ns:bootstrapInfo");
                   if (isset($bootstrap[0]['url']))
                     {
                       $bootstrapUrl = GetString($bootstrap[0]['url']);
@@ -534,8 +537,9 @@
               DebugLog("Update complete, Available fragments: $this->fragCount");
               if ($fragNum == $this->fragCount)
                 {
-                  usleep(1000000);
+                  usleep(2000000);
                   $retries++;
+                  echo sprintf("%-79s\r", "Updating bootstrap info, Retries: $retries");
                 }
             }
         }
@@ -715,7 +719,7 @@
               while ((count($cc->ch) < $this->parallel) and ($fragNum < $this->fragCount))
                 {
                   $fragNum += 1;
-                  echo sprintf("%-79s", "Downloading $fragNum/$this->fragCount fragments") . "\r";
+                  echo sprintf("%-79s\r", "Downloading $fragNum/$this->fragCount fragments");
                   if (in_array_field($fragNum, "firstFragment", $this->fragTable, true))
                       $this->discontinuity = value_in_array_field($fragNum, "firstFragment", "discontinuityIndicator", $this->fragTable, true);
                   if (($this->discontinuity == 1) or ($this->discontinuity == 3))
@@ -1278,6 +1282,7 @@
   $filesize     = 0;
   $fragCount    = 0;
   $fragNum      = 0;
+  $manifest     = "";
   $outDir       = "";
   $rename       = false;
   $start        = 0;
@@ -1339,16 +1344,7 @@
   if ($cli->getParam('rename'))
       $rename = $cli->getParam('rename');
 
-  $baseFilename = str_replace('\\', '/', $baseFilename);
-  if ($baseFilename and (substr($baseFilename, -1) != '/') and (substr($baseFilename, -1) != ':'))
-    {
-      if (strrpos($baseFilename, '/'))
-          $outFile = substr($baseFilename, strrpos($baseFilename, '/') + 1) . ".flv";
-      else
-          $outFile = $baseFilename . ".flv";
-    }
-  else
-      $outFile = "Joined.flv";
+  // Create output directory
   if ($outDir)
     {
       $outDir = rtrim(str_replace('\\', '/', $outDir));
@@ -1360,9 +1356,8 @@
           mkdir($outDir, 0777, true);
         }
     }
-  $outFile = $outDir . $outFile;
 
-  // Download and rename fragments if required
+  // Download and rename fragments
   if ($manifest)
     {
       $opt = array(
@@ -1375,6 +1370,19 @@
     }
   if ($rename)
       $f4f->RenameFragments($baseFilename, $fileExt);
+
+  // Determine output filename
+  $baseFilename = str_replace('\\', '/', $baseFilename);
+  if ($baseFilename and (substr($baseFilename, -1) != '/') and (substr($baseFilename, -1) != ':'))
+    {
+      if (strrpos($baseFilename, '/'))
+          $outFile = substr($baseFilename, strrpos($baseFilename, '/') + 1) . ".flv";
+      else
+          $outFile = $baseFilename . ".flv";
+    }
+  else
+      $outFile = "Joined.flv";
+  $outFile = $outDir . $outFile;
 
   // Check for available fragments
   if ($f4f->fragNum)
