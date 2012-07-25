@@ -465,18 +465,18 @@
             }
 
           // Available qualities
+          $bitrates = "";
           krsort($this->media, SORT_NUMERIC);
-          echo "Available Bitrates:";
           DebugLog("Manifest Entries:\n");
           DebugLog(sprintf(" %-8s%s", "Bitrate", "URL"));
           for ($i = 0; $i < count($this->media); $i++)
             {
               $key = KeyName($this->media, $i);
-              echo " $key";
+              $bitrates .= " $key";
               DebugLog(sprintf(" %-8d%s", $key, $this->media[$key]['url']));
             }
-          echo "\n";
           DebugLog("");
+          echo "Available Bitrates:$bitrates\n";
 
           // Quality selection
           if (is_numeric($this->quality) and isset($this->media[$this->quality]))
@@ -708,10 +708,14 @@
           else
               $this->baseFilename .= "Seg" . $segNum . "-Frag";
 
+          if ($fragNum >= $this->fragCount)
+              die(sprintf($GLOBALS['line'], "No fragment available for downloading"));
+
           if (strncasecmp($this->media['url'], "http", 4) == 0)
               $this->fragUrl = $this->media['url'];
           else
               $this->fragUrl = $this->baseUrl . "/" . $this->media['url'];
+          $this->fragUrl = NormalizePath($this->fragUrl);
           DebugLog("Downloading Fragments:\n");
 
           while (($fragNum < $this->fragCount) or $cc->active)
@@ -1207,6 +1211,29 @@
       return key($temp);
     }
 
+  function NormalizePath($path)
+    {
+      $inSegs  = preg_split('/(?<!\/)\/(?!\/)/u', $path);
+      $outSegs = array();
+
+      foreach ($inSegs as $seg)
+        {
+          if ($seg == '' || $seg == '.')
+              continue;
+          if ($seg == '..')
+              array_pop($outSegs);
+          else
+              array_push($outSegs, $seg);
+        }
+      $outPath = implode('/', $outSegs);
+
+      if (substr($path, 0, 1) == '/')
+          $outPath = '/' . $outPath;
+      if (substr($path, -1) == '/')
+          $outPath .= '/';
+      return $outPath;
+    }
+
   function ShowHeader($header)
     {
       $len    = strlen($header);
@@ -1387,21 +1414,23 @@
   // Check for available fragments
   if ($f4f->fragNum)
       $fragNum = $f4f->fragNum;
+  else if ($start)
+      $fragNum = $start - 1;
+  $count = $fragNum + 1;
   while (true)
     {
-      if (file_exists($baseFilename . ($fragNum + 1) . $fileExt))
+      if (file_exists($baseFilename . $count . $fileExt))
           $fragCount++;
-      else if (file_exists($baseFilename . ($fragNum + 1)))
+      else if (file_exists($baseFilename . $count))
         {
           $fileExt = "";
           $fragCount++;
         }
       else
           break;
-      $fragNum++;
+      $count++;
     }
   printf($GLOBALS['line'], "Found $fragCount fragments");
-  $fragNum = $f4f->fragNum;
 
   // Write flv header and metadata
   if ($fragCount)
