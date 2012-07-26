@@ -1451,7 +1451,7 @@
   // Delete fragments after processing
   if ($delete)
     {
-      for ($i = 1; $i <= $fragCount; $i++)
+      for ($i = $fragNum + 1; $i <= $fragNum + $fragCount; $i++)
           if (file_exists($baseFilename . $i . $fileExt))
               unlink($baseFilename . $i . $fileExt);
     }
