@@ -538,7 +538,7 @@
               DebugLog("Update complete, Available fragments: $this->fragCount");
               if ($fragNum == $this->fragCount)
                 {
-                  usleep(2000000);
+                  usleep(4000000);
                   $retries++;
                   printf("%-79s\r", "Updating bootstrap info, Retries: $retries");
                 }
@@ -1096,8 +1096,7 @@
               }
               $fragPos += $totalTagLen;
             }
-          if ($debug)
-              DebugLog("");
+          DebugLog("", $debug);
           $this->duration = round($packetTS / 1000, 0);
           if ($flv)
             {
