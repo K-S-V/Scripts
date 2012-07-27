@@ -422,11 +422,11 @@
               $streams = $xml->xpath("/ns:manifest/ns:media");
               foreach ($streams as $stream)
                 {
-                  $stream  = (array) $stream;
-                  $stream  = array_change_key_case($stream['@attributes']);
-                  $bitrate = isset($stream['bitrate']) ? (int) $stream['bitrate'] : $manifest['bitrate'];
-                  $mediaEntry =& $this->media[$bitrate];
+                  $stream   = (array) $stream;
+                  $stream   = array_change_key_case($stream['@attributes']);
+                  $bitrate  = isset($stream['bitrate']) ? (int) $stream['bitrate'] : $manifest['bitrate'];
                   $streamId = isset($stream[strtolower('streamId')]) ? GetString($stream[strtolower('streamId')]) : "";
+                  $mediaEntry =& $this->media[$bitrate];
 
                   // Extract baseUrl from manifest url
                   $baseUrl = $manifest['url'];
@@ -439,6 +439,7 @@
                       $baseUrl = substr($baseUrl, 0, strrpos($baseUrl, '/'));
                   $mediaEntry['baseUrl'] = $baseUrl;
 
+                  $mediaEntry['url'] = GetString($stream['url']);
                   if (isset($stream[strtolower('bootstrapInfoId')]))
                       $bootstrap = $xml->xpath("/ns:manifest/ns:bootstrapInfo[@id='" . $stream[strtolower('bootstrapInfoId')] . "']");
                   else
@@ -455,12 +456,11 @@
                     }
                   else
                       $mediaEntry['bootstrap'] = base64_decode(GetString($bootstrap[0]));
-                  $metadata = $xml->xpath("/ns:manifest/ns:media[@streamId='" . $streamId . "']/ns:metadata");
+                  $metadata = $xml->xpath("/ns:manifest/ns:media[@url='" . $mediaEntry['url'] . "']/ns:metadata");
                   if (isset($metadata[0]))
                       $mediaEntry['metadata'] = base64_decode(GetString($metadata[0]));
                   else
                       $mediaEntry['metadata'] = "";
-                  $mediaEntry['url'] = GetString($stream['url']);
                 }
             }
 
