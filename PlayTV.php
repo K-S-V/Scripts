@@ -100,32 +100,20 @@
       function setKey($key)
         {
           if (is_string($key))
-            {
               $k = $this->_str2long($key, false);
-            }
           elseif (is_array($key))
-            {
               $k = $key;
-            }
           else
-            {
               qecho("The secret key must be a string or long integer array\n");
-            }
+
           if (count($k) > 4)
-            {
               qecho("The secret key cannot be more than 16 characters or 4 long values\n");
-            }
           elseif (count($k) == 0)
-            {
               qecho("The secret key cannot be empty\n");
-            }
           elseif (count($k) < 4)
-            {
               for ($i = count($k); $i < 4; $i++)
-                {
                   $k[$i] = 0;
-                }
-            }
+
           $this->_key = $k;
           return true;
         }
@@ -133,49 +121,33 @@
       function encrypt($plaintext)
         {
           if ($this->_key == null)
-            {
               qecho("Secret key is undefined\n");
-            }
+
           if (is_string($plaintext))
-            {
               return $this->_encryptString($plaintext);
-            }
           elseif (is_array($plaintext))
-            {
               return $this->_encryptArray($plaintext);
-            }
           else
-            {
               qecho("The plain text must be a string or long integer array\n");
-            }
         }
 
       function decrypt($ciphertext)
         {
           if ($this->_key == null)
-            {
               qecho("Secret key is undefined\n");
-            }
+
           if (is_string($ciphertext))
-            {
               return $this->_decryptString($ciphertext);
-            }
           elseif (is_array($ciphertext))
-            {
               return $this->_decryptArray($ciphertext);
-            }
           else
-            {
               qecho("The cipher text must be a string or long integer array\n");
-            }
         }
 
       function _encryptString($str)
         {
           if ($str == '')
-            {
               return '';
-            }
           $v = $this->_str2long($str, false);
           $v = $this->_encryptArray($v);
           return $this->_long2str($v, false);
@@ -208,9 +180,7 @@
       function _decryptString($str)
         {
           if ($str == '')
-            {
               return '';
-            }
           $v = $this->_str2long($str, false);
           $v = $this->_decryptArray($v);
           return $this->_long2str($v, false);
@@ -245,26 +215,18 @@
           $len = count($v);
           $s   = '';
           for ($i = 0; $i < $len; $i++)
-            {
               $s .= pack('V', $v[$i]);
-            }
           if ($w)
-            {
               return substr($s, 0, $v[$len - 1]);
-            }
           else
-            {
               return $s;
-            }
         }
 
       function _str2long($s, $w)
         {
           $v = array_values(unpack('V*', $s . str_repeat("\0", (4 - strlen($s) % 4) & 3)));
           if ($w)
-            {
               $v[] = strlen($s);
-            }
           return $v;
         }
 
@@ -304,9 +266,7 @@
       function cookie($cookie_file)
         {
           if (file_exists($cookie_file))
-            {
               $this->cookie_file = $cookie_file;
-            }
           else
             {
               $file = fopen($cookie_file, 'w') or $this->error('The cookie file could not be opened. Make sure this directory has the correct permissions');
@@ -653,9 +613,7 @@
       $html = $cc->get("http://playtv.fr/television/");
       preg_match_all('/<a.*?data-channel="([^"]+).*?data-playerid="([^"]+)[^>]+>/i', $html, $links);
       for ($i = 0; $i < count($links[1]); $i++)
-        {
           $ChannelList[$links[1][$i]] = $links[2][$i];
-        }
       uksort($ChannelList, 'ci_uksort');
 
       $FirstRun    = true;
