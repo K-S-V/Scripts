@@ -284,7 +284,7 @@
                   $array['url'] = $download['url'];
                   if ($info['http_code'] == 200)
                     {
-                      if ($info['size_download'] && ($info['size_download'] >= $info['download_content_length']))
+                      if ($info['size_download'] >= $info['download_content_length'])
                         {
                           $array['status']   = $info['http_code'];
                           $array['response'] = curl_multi_getcontent($download['ch']);
@@ -552,8 +552,8 @@
           $bootstrapVersion = ReadInt32($bootstrapInfo, $pos + 4);
           $byte             = ReadByte($bootstrapInfo, $pos + 8);
           $profile          = ($byte & 0xC0) >> 6;
-          if ($this->live = (($byte & 0x20) >> 5) ? true : false)
-              $this->parallel = 1;
+          if (($byte & 0x20) >> 5)
+              $this->live = true;
           $update              = ($byte & 0x10) >> 4;
           $timescale           = ReadInt32($bootstrapInfo, $pos + 9);
           $currentMediaTime    = ReadInt64($bootstrapInfo, 13);
@@ -698,6 +698,7 @@
               $this->segNum  = $segNum;
               $this->fragNum = $fragNum;
             }
+          $lastFrag = $fragNum;
 
           // Extract baseFilename
           if (substr($this->media['url'], -1) == '/')
@@ -747,7 +748,7 @@
                           $segNum--;
 
                   DebugLog("Adding fragment $fragNum to download queue");
-                  $cc->addDownload("$this->fragUrl" . "Seg$segNum" . "-Frag$fragNum$this->auth", "$this->baseFilename$fragNum");
+                  $cc->addDownload("$this->fragUrl" . "Seg$segNum" . "-Frag$fragNum$this->auth", $fragNum);
                 }
 
               $downloads = $cc->checkDownloads();
@@ -759,21 +760,36 @@
                         {
                           if ($this->VerifyFragment($download['response']))
                             {
-                              DebugLog("Fragment " . $download['id'] . " successfully downloaded");
+                              DebugLog("Fragment $this->baseFilename" . $download['id'] . " successfully downloaded");
                               if ($this->live)
                                 {
-                                  if (!isset($opt['flv']))
+                                  $frags[$download['id']] = $download;
+                                  $available              = count($frags);
+                                  for ($i = 0; $i < $available; $i++)
                                     {
-                                      $opt['debug'] = false;
-                                      $this->InitDecoder();
-                                      $this->DecodeFragment($download['response'], $fragNum, $opt);
-                                      $opt['flv']   = WriteFlvFile($outDir . "$this->baseFilename-" . $fileCount++ . ".flv", $this->audio, $this->video);
-                                      $opt['debug'] = $this->debug;
-                                      $this->InitDecoder();
-                                      $this->DecodeFragment($download['response'], $fragNum, $opt);
+                                      if (isset($frags[$lastFrag + 1]))
+                                        {
+                                          $frag = $frags[$lastFrag + 1];
+                                          DebugLog("Writing fragment " . $frag['id'] . " to flv file");
+                                          if (!isset($opt['flv']))
+                                            {
+                                              $opt['debug'] = false;
+                                              $this->InitDecoder();
+                                              $this->DecodeFragment($frag['response'], $frag['id'], $opt);
+                                              $opt['flv']   = WriteFlvFile($outDir . "$this->baseFilename-" . $fileCount++ . ".flv", $this->audio, $this->video);
+                                              $opt['debug'] = $this->debug;
+                                              $this->InitDecoder();
+                                              $this->DecodeFragment($frag['response'], $frag['id'], $opt);
+                                            }
+                                          else
+                                              $this->DecodeFragment($frag['response'], $frag['id'], $opt);
+                                          $lastFrag = $frag['id'];
+                                          unset($frags[$lastFrag]);
+                                          unset($frag);
+                                        }
+                                      else
+                                          break;
                                     }
-                                  else
-                                      $this->DecodeFragment($download['response'], $fragNum, $opt);
                                   if ($tDuration and (($duration + $this->duration) >= $tDuration))
                                       die(sprintf("\n" . $GLOBALS['line'], "Finished recording " . ($duration + $this->duration) . " seconds of content."));
                                   if ($filesize and ($this->filesize >= $filesize))
@@ -784,11 +800,11 @@
                                     }
 
                                   // Update bootstrap info after successful download of last known fragment
-                                  if ($fragNum == $this->fragCount)
+                                  if ($lastFrag == $this->fragCount)
                                       $this->UpdateBootstrapInfo($cc, $this->bootstrapUrl);
                                 }
                               else
-                                  file_put_contents($download['id'], $download['response']);
+                                  file_put_contents($this->baseFilename . $download['id'], $download['response']);
                             }
                           else
                             {
