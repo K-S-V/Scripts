@@ -314,7 +314,10 @@
       function stopDownloads()
         {
           if (isset($this->mh))
+            {
               curl_multi_close($this->mh);
+              unset($this->mh);
+            }
         }
 
       function error($error)
@@ -770,20 +773,28 @@
                                       if (isset($frags[$lastFrag + 1]))
                                         {
                                           $frag = $frags[$lastFrag + 1];
-                                          DebugLog("Writing fragment " . $frag['id'] . " to flv file");
-                                          if (!isset($opt['flv']))
+                                          if ($frag !== false)
                                             {
-                                              $opt['debug'] = false;
-                                              $this->InitDecoder();
-                                              $this->DecodeFragment($frag['response'], $frag['id'], $opt);
-                                              $opt['flv']   = WriteFlvFile($outDir . "$this->baseFilename-" . $fileCount++ . ".flv", $this->audio, $this->video);
-                                              $opt['debug'] = $this->debug;
-                                              $this->InitDecoder();
-                                              $this->DecodeFragment($frag['response'], $frag['id'], $opt);
+                                              DebugLog("Writing fragment " . $frag['id'] . " to flv file");
+                                              if (!isset($opt['flv']))
+                                                {
+                                                  $opt['debug'] = false;
+                                                  $this->InitDecoder();
+                                                  $this->DecodeFragment($frag['response'], $frag['id'], $opt);
+                                                  $opt['flv']   = WriteFlvFile($outDir . "$this->baseFilename-" . $fileCount++ . ".flv", $this->audio, $this->video);
+                                                  $opt['debug'] = $this->debug;
+                                                  $this->InitDecoder();
+                                                  $this->DecodeFragment($frag['response'], $frag['id'], $opt);
+                                                }
+                                              else
+                                                  $this->DecodeFragment($frag['response'], $frag['id'], $opt);
+                                              $lastFrag = $frag['id'];
                                             }
                                           else
-                                              $this->DecodeFragment($frag['response'], $frag['id'], $opt);
-                                          $lastFrag = $frag['id'];
+                                            {
+                                              $lastFrag += 1;
+                                              DebugLog("Skipping failed fragment " . $lastFrag);
+                                            }
                                           unset($frags[$lastFrag]);
                                           unset($frag);
                                         }
@@ -824,19 +835,25 @@
                       else
                         {
                           DebugLog("Fragment " . $download['id'] . " doesn't exist, Status: " . $download['status']);
-                          $this->rename = true;
+                          $frags[$download['id']] = false;
+                          $this->rename           = true;
 
                           /* Resync with latest available fragment when we are left behind due to */
-                          /* slow connection and short live window on streaming server            */
-                          if ($this->live and ($download['status'] == 404) and ($fragNum == $this->fragCount))
+                          /* slow connection and short live window on streaming server. make sure */
+                          /* to stop all existing downloads and reset the last written fragment.  */
+                          if ($this->live and !$cc->active)
                             {
                               DebugLog("Trying to resync with latest available fragment");
+                              $cc->stopDownloads();
                               $this->UpdateBootstrapInfo($cc, $this->bootstrapUrl);
-                              $fragNum = $this->fragCount - 1;
+                              $fragNum  = $this->fragCount - 1;
+                              $lastFrag = $fragNum;
+                              unset($frags);
                             }
                         }
                     }
                 }
+              unset($download);
               usleep(50000);
             }
 
