@@ -405,7 +405,7 @@
                 {
                   $bitrate                        = (int) $manifest['bitrate'];
                   $manifests[$bitrate]['bitrate'] = $bitrate;
-                  $manifests[$bitrate]['url']     = $baseUrl . GetString($manifest['href']);
+                  $manifests[$bitrate]['url']     = NormalizePath($baseUrl . GetString($manifest['href']));
                   $manifests[$bitrate]['xml']     = $this->GetManifest($cc, $manifests[$bitrate]['url']);
                 }
             }
@@ -449,8 +449,8 @@
                       $bootstrapUrl = GetString($bootstrap[0]['url']);
                       if (strncasecmp($bootstrapUrl, "http", 4) != 0)
                           $bootstrapUrl = $mediaEntry['baseUrl'] . "/$bootstrapUrl";
-                      $mediaEntry['bootstrapUrl'] = $bootstrapUrl;
-                      if ($cc->get($bootstrapUrl) != 200)
+                      $mediaEntry['bootstrapUrl'] = NormalizePath($bootstrapUrl);
+                      if ($cc->get($mediaEntry['bootstrapUrl']) != 200)
                           die(sprintf($GLOBALS['line'], "Failed to get bootstrap info"));
                       $mediaEntry['bootstrap'] = $cc->response;
                     }
@@ -526,7 +526,7 @@
           while (($fragNum == $this->fragCount) and ($retries < 30))
             {
               $bootstrapPos = 0;
-              DebugLog("Updating bootstrap info, Available fragments: $this->fragCount");
+              DebugLog("Updating bootstrap info, Available fragments: " . $this->fragCount);
               if ($cc->get($bootstrapUrl) != 200)
                   die(sprintf($GLOBALS['line'], "Failed to refresh bootstrap info"));
               $bootstrapInfo = $cc->response;
@@ -535,12 +535,12 @@
                   $this->ParseBootstrapBox($bootstrapInfo, $bootstrapPos);
               else
                   die(sprintf($GLOBALS['line'], "Failed to parse bootstrap info"));
-              DebugLog("Update complete, Available fragments: $this->fragCount");
+              DebugLog("Update complete, Available fragments: " . $this->fragCount);
               if ($fragNum == $this->fragCount)
                 {
                   usleep(4000000);
                   $retries++;
-                  printf("%-79s\r", "Updating bootstrap info, Retries: $retries");
+                  printf("%-79s\r", "Updating bootstrap info, Retries: " . $retries);
                 }
             }
         }
@@ -733,7 +733,7 @@
                       $this->rename = true;
                       continue;
                     }
-                  if (file_exists("$this->baseFilename$fragNum"))
+                  if (file_exists($this->baseFilename . $fragNum))
                     {
                       DebugLog("Fragment $fragNum is already downloaded");
                       continue;
@@ -748,7 +748,7 @@
                           $segNum--;
 
                   DebugLog("Adding fragment $fragNum to download queue");
-                  $cc->addDownload("$this->fragUrl" . "Seg$segNum" . "-Frag$fragNum$this->auth", $fragNum);
+                  $cc->addDownload($this->fragUrl . "Seg" . $segNum . "-Frag" . $fragNum . $this->auth, $fragNum);
                 }
 
               $downloads = $cc->checkDownloads();
@@ -760,7 +760,7 @@
                         {
                           if ($this->VerifyFragment($download['response']))
                             {
-                              DebugLog("Fragment $this->baseFilename" . $download['id'] . " successfully downloaded");
+                              DebugLog("Fragment " . $this->baseFilename . $download['id'] . " successfully downloaded");
                               if ($this->live)
                                 {
                                   $frags[$download['id']] = $download;
@@ -789,17 +789,17 @@
                                         }
                                       else
                                           break;
-                                    }
-                                  if ($tDuration and (($duration + $this->duration) >= $tDuration))
-                                      die(sprintf("\n" . $GLOBALS['line'], "Finished recording " . ($duration + $this->duration) . " seconds of content."));
-                                  if ($filesize and ($this->filesize >= $filesize))
-                                    {
-                                      $duration += $this->duration;
-                                      fclose($opt['flv']);
-                                      unset($opt['flv']);
+                                      if ($tDuration and (($duration + $this->duration) >= $tDuration))
+                                          die(sprintf("\n" . $GLOBALS['line'], "Finished recording " . ($duration + $this->duration) . " seconds of content."));
+                                      if ($filesize and ($this->filesize >= $filesize))
+                                        {
+                                          $duration += $this->duration;
+                                          fclose($opt['flv']);
+                                          unset($opt['flv']);
+                                        }
                                     }
 
-                                  // Update bootstrap info after successful download of last known fragment
+                                  // Update bootstrap info after successful writing of last known fragment
                                   if ($lastFrag == $this->fragCount)
                                       $this->UpdateBootstrapInfo($cc, $this->bootstrapUrl);
                                 }
