@@ -329,10 +329,10 @@
 
   class F4F
     {
-      var $audio, $auth, $baseFilename, $baseTS, $bootstrapUrl, $baseUrl, $debug, $duration, $filesize;
-      var $format, $live, $media, $parallel, $quality, $rename, $video;
+      var $audio, $auth, $baseFilename, $baseTS, $bootstrapUrl, $baseUrl, $debug, $duration, $fileCount, $filesize;
+      var $format, $live, $media, $outDir, $parallel, $quality, $rename, $video;
       var $prevTagSize, $tagHeaderLen;
-      var $segTable, $fragTable, $segNum, $fragNum, $fragCount, $fragsPerSeg, $fragUrl, $discontinuity;
+      var $segTable, $fragTable, $segNum, $fragNum, $frags, $fragCount, $fragsPerSeg, $lastFrag, $fragUrl, $discontinuity;
       var $prevAudioTS, $prevVideoTS, $pAudioTagLen, $pVideoTagLen, $pAudioTagPos, $pVideoTagPos;
       var $prevAVC_Header, $prevAAC_Header, $AVC_HeaderWritten, $AAC_HeaderWritten;
 
@@ -343,15 +343,19 @@
           $this->bootstrapUrl  = "";
           $this->debug         = false;
           $this->duration      = 0;
+          $this->fileCount     = 1;
           $this->format        = "";
           $this->live          = false;
+          $this->outDir        = "";
           $this->parallel      = 8;
           $this->quality       = "high";
           $this->rename        = false;
           $this->segNum        = 1;
           $this->fragNum       = false;
+          $this->frags         = array();
           $this->fragCount     = 0;
           $this->fragsPerSeg   = 0;
+          $this->lastFrag      = 0;
           $this->discontinuity = "";
           $this->InitDecoder();
         }
@@ -376,7 +380,7 @@
           $this->AAC_HeaderWritten = false;
         }
 
-      function GetManifest($cc, $manifest)
+      function GetManifest(&$cc, $manifest)
         {
           $status = $cc->get($manifest);
           if ($status == 403)
@@ -392,7 +396,7 @@
           return $xml;
         }
 
-      function ParseManifest($cc, $manifest)
+      function ParseManifest(&$cc, $manifest)
         {
           printf($GLOBALS['line'], "Processing manifest info....");
           $xml     = $this->GetManifest($cc, $manifest);
@@ -522,7 +526,7 @@
               die(sprintf($GLOBALS['line'], "Failed to parse bootstrap info"));
         }
 
-      function UpdateBootstrapInfo($cc, $bootstrapUrl)
+      function UpdateBootstrapInfo(&$cc, $bootstrapUrl)
         {
           $retries = 0;
           $fragNum = $this->fragCount;
@@ -678,18 +682,13 @@
             }
         }
 
-      function DownloadFragments($cc, $manifest, $opt = array())
+      function DownloadFragments(&$cc, $manifest, $opt = array())
         {
           isset($opt['start']) ? $start = $opt['start'] : $start = 0;
-          isset($opt['duration']) ? $tDuration = $opt['duration'] : $tDuration = 0;
-          isset($opt['filesize']) ? $filesize = $opt['filesize'] : $filesize = 0;
-          isset($opt['outdir']) ? $outDir = $opt['outdir'] : $outDir = "";
 
           $this->ParseManifest($cc, $manifest);
-          $segNum    = $this->segNum;
-          $fragNum   = $this->fragNum;
-          $duration  = 0;
-          $fileCount = 1;
+          $segNum  = $this->segNum;
+          $fragNum = $this->fragNum;
           if ($start)
             {
               if ($segNum > 1)
@@ -701,7 +700,9 @@
               $this->segNum  = $segNum;
               $this->fragNum = $fragNum;
             }
-          $lastFrag = $fragNum;
+          $this->lastFrag = $fragNum;
+          $opt['cc'] =& $cc;
+          $opt['duration'] = 0;
 
           // Extract baseFilename
           if (substr($this->media['url'], -1) == '/')
@@ -765,55 +766,7 @@
                             {
                               DebugLog("Fragment " . $this->baseFilename . $download['id'] . " successfully downloaded");
                               if ($this->live)
-                                {
-                                  $frags[$download['id']] = $download;
-                                  $available              = count($frags);
-                                  for ($i = 0; $i < $available; $i++)
-                                    {
-                                      if (isset($frags[$lastFrag + 1]))
-                                        {
-                                          $frag = $frags[$lastFrag + 1];
-                                          if ($frag !== false)
-                                            {
-                                              DebugLog("Writing fragment " . $frag['id'] . " to flv file");
-                                              if (!isset($opt['flv']))
-                                                {
-                                                  $opt['debug'] = false;
-                                                  $this->InitDecoder();
-                                                  $this->DecodeFragment($frag['response'], $frag['id'], $opt);
-                                                  $opt['flv']   = WriteFlvFile($outDir . "$this->baseFilename-" . $fileCount++ . ".flv", $this->audio, $this->video);
-                                                  $opt['debug'] = $this->debug;
-                                                  $this->InitDecoder();
-                                                  $this->DecodeFragment($frag['response'], $frag['id'], $opt);
-                                                }
-                                              else
-                                                  $this->DecodeFragment($frag['response'], $frag['id'], $opt);
-                                              $lastFrag = $frag['id'];
-                                            }
-                                          else
-                                            {
-                                              $lastFrag += 1;
-                                              DebugLog("Skipping failed fragment " . $lastFrag);
-                                            }
-                                          unset($frags[$lastFrag]);
-                                          unset($frag);
-                                        }
-                                      else
-                                          break;
-                                      if ($tDuration and (($duration + $this->duration) >= $tDuration))
-                                          die(sprintf("\n" . $GLOBALS['line'], "Finished recording " . ($duration + $this->duration) . " seconds of content."));
-                                      if ($filesize and ($this->filesize >= $filesize))
-                                        {
-                                          $duration += $this->duration;
-                                          fclose($opt['flv']);
-                                          unset($opt['flv']);
-                                        }
-                                    }
-
-                                  // Update bootstrap info after successful writing of last known fragment
-                                  if ($lastFrag == $this->fragCount)
-                                      $this->UpdateBootstrapInfo($cc, $this->bootstrapUrl);
-                                }
+                                  $this->WriteLiveFragment($download, $opt);
                               else
                                   file_put_contents($this->baseFilename . $download['id'], $download['response']);
                             }
@@ -835,8 +788,8 @@
                       else
                         {
                           DebugLog("Fragment " . $download['id'] . " doesn't exist, Status: " . $download['status']);
-                          $frags[$download['id']] = false;
-                          $this->rename           = true;
+                          $this->frags[$download['id']] = false;
+                          $this->rename                 = true;
 
                           /* Resync with latest available fragment when we are left behind due to */
                           /* slow connection and short live window on streaming server. make sure */
@@ -846,15 +799,15 @@
                               DebugLog("Trying to resync with latest available fragment");
                               $cc->stopDownloads();
                               $this->UpdateBootstrapInfo($cc, $this->bootstrapUrl);
-                              $fragNum  = $this->fragCount - 1;
-                              $lastFrag = $fragNum;
-                              unset($frags);
+                              $fragNum        = $this->fragCount - 1;
+                              $this->lastFrag = $fragNum;
+                              unset($this->frags);
                             }
                         }
                     }
                 }
               unset($download);
-              usleep(50000);
+              usleep(40000);
             }
 
           echo "\n";
@@ -1139,6 +1092,62 @@
           else
               return $flvData;
         }
+
+      function WriteLiveFragment($download, &$opt)
+        {
+          $this->frags[$download['id']] = $download;
+
+          $available = count($this->frags);
+          for ($i = 0; $i < $available; $i++)
+            {
+              if (isset($this->frags[$this->lastFrag + 1]))
+                {
+                  $frag = $this->frags[$this->lastFrag + 1];
+                  if ($frag !== false)
+                    {
+                      DebugLog("Writing fragment " . $frag['id'] . " to flv file");
+                      if (!isset($opt['flv']))
+                        {
+                          $opt['debug'] = false;
+                          $this->InitDecoder();
+                          $this->DecodeFragment($frag['response'], $frag['id'], $opt);
+                          $opt['flv']   = WriteFlvFile($this->outDir . "$this->baseFilename-" . $this->fileCount++ . ".flv", $this->audio, $this->video);
+                          $opt['debug'] = $this->debug;
+                          $this->InitDecoder();
+                          $this->DecodeFragment($frag['response'], $frag['id'], $opt);
+                        }
+                      else
+                          $this->DecodeFragment($frag['response'], $frag['id'], $opt);
+                      $this->lastFrag = $frag['id'];
+                    }
+                  else
+                    {
+                      $this->lastFrag += 1;
+                      DebugLog("Skipping failed fragment " . $this->lastFrag);
+                    }
+                  unset($this->frags[$this->lastFrag]);
+                }
+              else
+                  break;
+
+              if ($opt['tDuration'] and (($opt['duration'] + $this->duration) >= $opt['tDuration']))
+                  die(sprintf("\n" . $GLOBALS['line'], "Finished recording " . ($opt['duration'] + $this->duration) . " seconds of content."));
+              if ($opt['filesize'] and ($this->filesize >= $opt['filesize']))
+                {
+                  $this->filesize = 0;
+                  $opt['duration'] += $this->duration;
+                  fclose($opt['flv']);
+                  unset($opt['flv']);
+                }
+
+              // Update bootstrap info after successful writing of last known fragment
+              if ($this->lastFrag == $this->fragCount)
+                  $this->UpdateBootstrapInfo($opt['cc'], $this->bootstrapUrl);
+            }
+
+          if (!count($this->frags))
+              $this->frags = array();
+        }
     }
 
   function ReadByte($str, $pos)
@@ -1405,15 +1414,15 @@
           mkdir($outDir, 0777, true);
         }
     }
+  $f4f->outDir = $outDir;
 
   // Download fragments when manifest is available
   if ($manifest)
     {
       $opt = array(
           'start' => $start,
-          'duration' => $duration,
-          'filesize' => $filesize,
-          'outdir' => $outDir
+          'tDuration' => $duration,
+          'filesize' => $filesize
       );
       $f4f->DownloadFragments($cc, $manifest, $opt);
     }
