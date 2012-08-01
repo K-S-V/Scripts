@@ -18,6 +18,7 @@
               'debug'  => 'show debug output',
               'delete' => 'delete fragments after processing',
               'fproxy' => 'force proxy for downloading of fragments',
+              'play'   => 'dump flv file to stderr for piping',
               'rename' => 'rename fragments sequentially before processing'
           ),
           1 => array(
@@ -70,10 +71,7 @@
                   else if (!$doubleParam && $isparam)
                     {
                       if (isset($this->params[$arg]))
-                        {
-                          echo "'$arg' switch cannot occur more than once\n";
-                          die;
-                        }
+                          die("'$arg' switch cannot occur more than once\n");
 
                       $this->params[$arg] = true;
                       if (isset(self::$ACCEPTED[1][$arg]))
@@ -95,10 +93,7 @@
           // Final check
           foreach ($this->params as $k => $v)
               if (isset(self::$ACCEPTED[1][$k]) && $v === true)
-                {
-                  echo "[param] expected after '$k' switch (" . self::$ACCEPTED[1][$k] . ")\n";
-                  die;
-                }
+                  die("[param] expected after '$k' switch (" . self::$ACCEPTED[1][$k] . ")\n");
         }
 
       public function getParam($name)
@@ -322,15 +317,14 @@
 
       function error($error)
         {
-          echo "cURL Error : $error";
-          die;
+          die("cURL Error : $error");
         }
     }
 
   class F4F
     {
       var $audio, $auth, $baseFilename, $baseTS, $bootstrapUrl, $baseUrl, $debug, $duration, $fileCount, $filesize;
-      var $format, $live, $media, $outDir, $parallel, $quality, $rename, $video;
+      var $format, $live, $media, $outDir, $parallel, $play, $quality, $rename, $video;
       var $prevTagSize, $tagHeaderLen;
       var $segTable, $fragTable, $segNum, $fragNum, $frags, $fragCount, $fragsPerSeg, $lastFrag, $fragUrl, $discontinuity;
       var $prevAudioTS, $prevVideoTS, $pAudioTagLen, $pVideoTagLen, $pAudioTagPos, $pVideoTagPos;
@@ -348,6 +342,7 @@
           $this->live          = false;
           $this->outDir        = "";
           $this->parallel      = 8;
+          $this->play          = false;
           $this->quality       = "high";
           $this->rename        = false;
           $this->segNum        = 1;
@@ -684,7 +679,8 @@
 
       function DownloadFragments(&$cc, $manifest, $opt = array())
         {
-          isset($opt['start']) ? $start = $opt['start'] : $start = 0;
+          $start = 0;
+          extract($opt, EXTR_IF_EXISTS);
 
           $this->ParseManifest($cc, $manifest);
           $segNum  = $this->segNum;
@@ -788,8 +784,9 @@
                       else
                         {
                           DebugLog("Fragment " . $download['id'] . " doesn't exist, Status: " . $download['status']);
-                          $this->frags[$download['id']] = false;
-                          $this->rename                 = true;
+                          if ($this->live)
+                              $this->frags[$download['id']] = false;
+                          $this->rename = true;
 
                           /* Resync with latest available fragment when we are left behind due to */
                           /* slow connection and short live window on streaming server. make sure */
@@ -899,12 +896,13 @@
 
       function DecodeFragment($frag, $fragNum, $opt = array())
         {
+          $debug = $this->debug;
+          $flv   = false;
+          extract($opt, EXTR_IF_EXISTS);
+
           $flvData = "";
           $fragLen = 0;
           $fragPos = 0;
-
-          isset($opt['flv']) ? $flv = $opt['flv'] : $flv = false;
-          isset($opt['debug']) ? $debug = $opt['debug'] : $debug = $this->debug;
 
           $fragLen = strlen($frag);
           if (!$this->VerifyFragment($frag))
@@ -985,7 +983,9 @@
                               if ($flv)
                                 {
                                   $pAudioTagPos = ftell($flv);
-                                  fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
+                                  $status       = fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
+                                  if (!$status)
+                                      die(sprintf($GLOBALS['line'], "Failed to write flv file"));
                                   if ($debug)
                                       DebugLog(sprintf($this->format . "%-16s", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize, $pAudioTagPos));
                                 }
@@ -1054,7 +1054,9 @@
                               if ($flv)
                                 {
                                   $pVideoTagPos = ftell($flv);
-                                  fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
+                                  $status       = fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
+                                  if (!$status)
+                                      die(sprintf($GLOBALS['line'], "Failed to write flv file"));
                                   if ($debug)
                                       DebugLog(sprintf($this->format . "%-16s", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize, $pVideoTagPos));
                                 }
@@ -1284,7 +1286,10 @@
           else if ($video & !$audio)
               $flvHeader[4] = "\x01";
 
-      $flv = fopen($outFile, "w+b");
+      if ($f4f->play)
+          $flv = STDERR;
+      else
+          $flv = fopen($outFile, "w+b");
       if (!$flv)
           die(sprintf($GLOBALS['line'], "Failed to open " . $outFile));
       fwrite($flv, $flvHeader, $flvHeaderLen);
@@ -1342,6 +1347,7 @@
   $fragNum      = 0;
   $manifest     = "";
   $outDir       = "";
+  $play         = false;
   $rename       = false;
   $start        = 0;
 
@@ -1377,6 +1383,10 @@
       $delete = true;
   if ($cli->getParam('fproxy'))
       $cc->fragProxy = true;
+  if ($cli->getParam('play'))
+      $play = true;
+  if ($cli->getParam('rename'))
+      $rename = $cli->getParam('rename');
   if ($cli->getParam('auth'))
       $f4f->auth = "?" . $cli->getParam('auth');
   if ($cli->getParam('duration'))
@@ -1399,8 +1409,6 @@
       $start = $cli->getParam('start');
   if ($cli->getParam('useragent'))
       $cc->user_agent = $cli->getParam('useragent');
-  if ($cli->getParam('rename'))
-      $rename = $cli->getParam('rename');
 
   // Create output directory
   if ($outDir)
@@ -1415,6 +1423,14 @@
         }
     }
   $f4f->outDir = $outDir;
+
+  // Disable debug and filesize when piping
+  if ($play)
+    {
+      $debug     = false;
+      $filesize  = 0;
+      $f4f->play = true;
+    }
 
   // Download fragments when manifest is available
   if ($manifest)
