@@ -375,7 +375,7 @@
           $this->AAC_HeaderWritten = false;
         }
 
-      function GetManifest(&$cc, $manifest)
+      function GetManifest($cc, $manifest)
         {
           $status = $cc->get($manifest);
           if ($status == 403)
@@ -391,7 +391,7 @@
           return $xml;
         }
 
-      function ParseManifest(&$cc, $manifest)
+      function ParseManifest($cc, $manifest)
         {
           printf($GLOBALS['line'], "Processing manifest info....");
           $xml     = $this->GetManifest($cc, $manifest);
@@ -521,7 +521,7 @@
               die(sprintf($GLOBALS['line'], "Failed to parse bootstrap info"));
         }
 
-      function UpdateBootstrapInfo(&$cc, $bootstrapUrl)
+      function UpdateBootstrapInfo($cc, $bootstrapUrl)
         {
           $retries = 0;
           $fragNum = $this->fragCount;
@@ -677,7 +677,7 @@
             }
         }
 
-      function DownloadFragments(&$cc, $manifest, $opt = array())
+      function DownloadFragments($cc, $manifest, $opt = array())
         {
           $start = 0;
           extract($opt, EXTR_IF_EXISTS);
@@ -696,8 +696,8 @@
               $this->segNum  = $segNum;
               $this->fragNum = $fragNum;
             }
-          $this->lastFrag = $fragNum;
-          $opt['cc'] =& $cc;
+          $this->lastFrag  = $fragNum;
+          $opt['cc']       = $cc;
           $opt['duration'] = 0;
 
           // Extract baseFilename
@@ -730,6 +730,8 @@
                       $this->discontinuity = value_in_array_field($fragNum, "firstFragment", "discontinuityIndicator", $this->fragTable, true);
                   if (($this->discontinuity == 1) or ($this->discontinuity == 3))
                     {
+                      if ($this->live)
+                          $this->frags[$download['id']] = false;
                       $this->rename = true;
                       continue;
                     }
@@ -925,7 +927,7 @@
               $packetType = ReadByte($frag, $fragPos);
               $packetSize = ReadInt24($frag, $fragPos + 1);
               $packetTS   = ReadInt24($frag, $fragPos + 4);
-              $packetTS   = ($packetTS | (ReadByte($frag, $fragPos + 7) << 24));
+              $packetTS   = $packetTS | (ReadByte($frag, $fragPos + 7) << 24);
               if ($packetTS & 0x80000000)
                 {
                   $packetTS &= 0x7FFFFFFF;
@@ -985,7 +987,7 @@
                                   $pAudioTagPos = ftell($flv);
                                   $status       = fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
                                   if (!$status)
-                                      die(sprintf($GLOBALS['line'], "Failed to write flv file"));
+                                      die(sprintf($GLOBALS['line'], "Failed to write flv data to file"));
                                   if ($debug)
                                       DebugLog(sprintf($this->format . "%-16s", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize, $pAudioTagPos));
                                 }
@@ -1056,7 +1058,7 @@
                                   $pVideoTagPos = ftell($flv);
                                   $status       = fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
                                   if (!$status)
-                                      die(sprintf($GLOBALS['line'], "Failed to write flv file"));
+                                      die(sprintf($GLOBALS['line'], "Failed to write flv data to file"));
                                   if ($debug)
                                       DebugLog(sprintf($this->format . "%-16s", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize, $pVideoTagPos));
                                 }
@@ -1108,18 +1110,24 @@
                   if ($frag !== false)
                     {
                       DebugLog("Writing fragment " . $frag['id'] . " to flv file");
-                      if (!isset($opt['flv']))
+                      if (!isset($opt['file']))
                         {
                           $opt['debug'] = false;
+                          if ($this->play)
+                              $outFile = STDERR;
+                          else
+                              $outFile = $this->outDir . "$this->baseFilename-" . $this->fileCount++ . ".flv";
                           $this->InitDecoder();
                           $this->DecodeFragment($frag['response'], $frag['id'], $opt);
-                          $opt['flv']   = WriteFlvFile($this->outDir . "$this->baseFilename-" . $this->fileCount++ . ".flv", $this->audio, $this->video);
+                          $opt['file'] = WriteFlvFile($outFile, $this->audio, $this->video);
+
                           $opt['debug'] = $this->debug;
                           $this->InitDecoder();
-                          $this->DecodeFragment($frag['response'], $frag['id'], $opt);
                         }
-                      else
-                          $this->DecodeFragment($frag['response'], $frag['id'], $opt);
+                      $flvData = $this->DecodeFragment($frag['response'], $frag['id'], $opt);
+                      $status  = fwrite($opt['file'], $flvData, strlen($flvData));
+                      if (!$status)
+                          die(sprintf($GLOBALS['line'], "Failed to write flv data"));
                       $this->lastFrag = $frag['id'];
                     }
                   else
@@ -1138,8 +1146,8 @@
                 {
                   $this->filesize = 0;
                   $opt['duration'] += $this->duration;
-                  fclose($opt['flv']);
-                  unset($opt['flv']);
+                  fclose($opt['file']);
+                  unset($opt['file']);
                 }
 
               // Update bootstrap info after successful writing of last known fragment
@@ -1277,24 +1285,22 @@
 
   function WriteFlvFile($outFile, $audio = true, $video = true)
     {
-      global $f4f, $flvHeaderLen;
+      $flvHeader    = pack("H*", "464c5601050000000900000000");
+      $flvHeaderLen = strlen($flvHeader);
 
-      $flvHeader = $GLOBALS['flvHeader'];
       if (!$video or !$audio)
           if ($audio & !$video)
               $flvHeader[4] = "\x04";
           else if ($video & !$audio)
               $flvHeader[4] = "\x01";
 
-      if ($f4f->play)
-          $flv = STDERR;
+      if (is_resource($outFile))
+          $flv = $outFile;
       else
           $flv = fopen($outFile, "w+b");
       if (!$flv)
           die(sprintf($GLOBALS['line'], "Failed to open " . $outFile));
       fwrite($flv, $flvHeader, $flvHeaderLen);
-      if (!$f4f->live)
-          $f4f->WriteMetadata($flv);
       return $flv;
     }
 
@@ -1333,8 +1339,6 @@
     }
 
   ShowHeader("KSV Adobe HDS Downloader");
-  $flvHeader    = pack("H*", "464c5601050000000900000000");
-  $flvHeaderLen = strlen($flvHeader);
   $format       = " %-8s%-16s%-16s%-8s";
   $line         = "%-79s\n";
   $baseFilename = "";
@@ -1484,7 +1488,11 @@
 
   // Write flv header and metadata
   if ($fragCount)
+    {
       $flv = WriteFlvFile($outFile);
+      if (!($fragNum > 0))
+          $f4f->WriteMetadata($flv);
+    }
   else
       exit(1);
 
@@ -1499,7 +1507,7 @@
     {
       $frag = file_get_contents($baseFilename . $i . $fileExt);
       $f4f->DecodeFragment($frag, $i, $opt);
-      echo "Processed $i fragments\r";
+      echo "Processed " . ($i - $fragNum) . " fragments\r";
     }
   fclose($flv);
   $timeEnd   = microtime(true);
