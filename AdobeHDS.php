@@ -129,6 +129,7 @@
       function cURL($cookies = true, $cookie = 'Cookies.txt', $compression = 'gzip', $proxy = '')
         {
           $this->headers[]   = 'Accept: image/gif, image/x-bitmap, image/jpeg, image/pjpeg';
+          $this->headers[]   = 'Connection: Keep-Alive';
           $this->headers[]   = 'Content-type: application/x-www-form-urlencoded;charset=UTF-8';
           $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:14.0) Gecko/20100101 Firefox/14.0.1';
           $this->compression = $compression;
