@@ -462,18 +462,20 @@
             }
 
           // Available qualities
-          $bitrates = "";
+          $bitrates = array();
+          if (!count($this->media))
+              Quit("No media entry found");
           krsort($this->media, SORT_NUMERIC);
           DebugLog("Manifest Entries:\n");
           DebugLog(sprintf(" %-8s%s", "Bitrate", "URL"));
           for ($i = 0; $i < count($this->media); $i++)
             {
-              $key = KeyName($this->media, $i);
-              $bitrates .= " $key";
+              $key        = KeyName($this->media, $i);
+              $bitrates[] = $key;
               DebugLog(sprintf(" %-8d%s", $key, $this->media[$key]['url']));
             }
           DebugLog("");
-          echo "Available Bitrates:$bitrates\n";
+          echo "Available Bitrates: " . implode(' ', $bitrates) . "\n";
 
           // Quality selection
           if (is_numeric($this->quality) and isset($this->media[$this->quality]))
