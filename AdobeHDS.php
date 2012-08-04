@@ -116,14 +116,8 @@
 
   class cURL
     {
-      var $headers;
-      var $user_agent;
-      var $compression;
-      var $cookie_file;
-      var $proxy, $fragProxy;
-      var $active;
-      var $cert_check;
-      var $response;
+      var $headers, $user_agent, $compression, $cookie_file;
+      var $active, $cert_check, $fragProxy, $proxy, $response;
       var $mh, $ch, $mrc;
 
       function cURL($cookies = true, $cookie = 'Cookies.txt', $compression = 'gzip', $proxy = '')
@@ -380,12 +374,12 @@
         {
           $status = $cc->get($manifest);
           if ($status == 403)
-              die(sprintf($GLOBALS['line'], "Access Denied! Unable to download manifest."));
+              Quit("Access Denied! Unable to download manifest.");
           else if ($status != 200)
-              die(sprintf($GLOBALS['line'], "Unable to download manifest"));
+              Quit("Unable to download manifest");
           $xml = simplexml_load_string(trim($cc->response));
           if (!$xml)
-              die(sprintf($GLOBALS['line'], "Failed to load xml"));
+              Quit("Failed to load xml");
           $namespace = $xml->getDocNamespaces();
           $namespace = $namespace[''];
           $xml->registerXPathNamespace("ns", $namespace);
@@ -394,7 +388,7 @@
 
       function ParseManifest($cc, $manifest)
         {
-          printf($GLOBALS['line'], "Processing manifest info....");
+          Message("Processing manifest info....");
           $xml     = $this->GetManifest($cc, $manifest);
           $baseUrl = $xml->xpath("/ns:manifest/ns:baseURL");
           if (isset($baseUrl[0]))
@@ -454,7 +448,7 @@
                           $bootstrapUrl = $mediaEntry['baseUrl'] . "/$bootstrapUrl";
                       $mediaEntry['bootstrapUrl'] = NormalizePath($bootstrapUrl);
                       if ($cc->get($mediaEntry['bootstrapUrl']) != 200)
-                          die(sprintf($GLOBALS['line'], "Failed to get bootstrap info"));
+                          Quit("Failed to get bootstrap info");
                       $mediaEntry['bootstrap'] = $cc->response;
                     }
                   else
@@ -519,7 +513,7 @@
           if ($boxType == "abst")
               $this->ParseBootstrapBox($bootstrapInfo, $pos);
           else
-              die(sprintf($GLOBALS['line'], "Failed to parse bootstrap info"));
+              Quit("Failed to parse bootstrap info");
         }
 
       function UpdateBootstrapInfo($cc, $bootstrapUrl)
@@ -531,13 +525,13 @@
               $bootstrapPos = 0;
               DebugLog("Updating bootstrap info, Available fragments: " . $this->fragCount);
               if ($cc->get($bootstrapUrl) != 200)
-                  die(sprintf($GLOBALS['line'], "Failed to refresh bootstrap info"));
+                  Quit("Failed to refresh bootstrap info");
               $bootstrapInfo = $cc->response;
               ReadBoxHeader($bootstrapInfo, $bootstrapPos, $boxType, $boxSize);
               if ($boxType == "abst")
                   $this->ParseBootstrapBox($bootstrapInfo, $bootstrapPos);
               else
-                  die(sprintf($GLOBALS['line'], "Failed to parse bootstrap info"));
+                  Quit("Failed to parse bootstrap info");
               DebugLog("Update complete, Available fragments: " . $this->fragCount);
               if ($fragNum == $this->fragCount)
                 {
@@ -712,7 +706,7 @@
               $this->baseFilename .= "Seg" . $segNum . "-Frag";
 
           if ($fragNum >= $this->fragCount)
-              die(sprintf($GLOBALS['line'], "No fragment available for downloading"));
+              Quit("No fragment available for downloading");
 
           if (strncasecmp($this->media['url'], "http", 4) == 0)
               $this->fragUrl = $this->media['url'];
@@ -783,7 +777,7 @@
                           $cc->addDownload($download['url'], $download['id']);
                         }
                       else if ($download['status'] == 403)
-                          die(sprintf($GLOBALS['line'], "Access Denied! Unable to download fragments."));
+                          Quit("Access Denied! Unable to download fragments.");
                       else
                         {
                           DebugLog("Fragment " . $download['id'] . " doesn't exist, Status: " . $download['status']);
@@ -910,7 +904,7 @@
           $fragLen = strlen($frag);
           if (!$this->VerifyFragment($frag))
             {
-              printf($GLOBALS['line'], "Skipping fragment number $fragNum");
+              Message("Skipping fragment number $fragNum");
               return false;
             }
 
@@ -988,7 +982,7 @@
                                   $pAudioTagPos = ftell($flv);
                                   $status       = fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
                                   if (!$status)
-                                      die(sprintf($GLOBALS['line'], "Failed to write flv data to file"));
+                                      Quit("Failed to write flv data to file");
                                   if ($debug)
                                       DebugLog(sprintf($this->format . "%-16s", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize, $pAudioTagPos));
                                 }
@@ -1059,7 +1053,7 @@
                                   $pVideoTagPos = ftell($flv);
                                   $status       = fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
                                   if (!$status)
-                                      die(sprintf($GLOBALS['line'], "Failed to write flv data to file"));
+                                      Quit("Failed to write flv data to file");
                                   if ($debug)
                                       DebugLog(sprintf($this->format . "%-16s", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize, $pVideoTagPos));
                                 }
@@ -1128,7 +1122,7 @@
                       $flvData = $this->DecodeFragment($frag['response'], $frag['id'], $opt);
                       $status  = fwrite($opt['file'], $flvData, strlen($flvData));
                       if (!$status)
-                          die(sprintf($GLOBALS['line'], "Failed to write flv data"));
+                          Quit("Failed to write flv data");
                       $this->lastFrag = $frag['id'];
                     }
                   else
@@ -1237,9 +1231,9 @@
 
   function DebugLog($msg, $display = true)
     {
-      global $debug;
+      global $debug, $logfile;
       if ($display and $debug)
-          fwrite(STDERR, $msg . "\n");
+          fwrite($logfile, $msg . "\n");
     }
 
   function GetString($xmlObject)
@@ -1251,6 +1245,11 @@
     {
       $temp = array_slice($a, $pos, 1, true);
       return key($temp);
+    }
+
+  function Message($msg)
+    {
+      printf($GLOBALS['line'], $msg);
     }
 
   function NormalizePath($path)
@@ -1274,6 +1273,11 @@
       if (substr($path, -1) == '/')
           $outPath .= '/';
       return $outPath;
+    }
+
+  function Quit($msg)
+    {
+      die(sprintf($GLOBALS['line'], $msg));
     }
 
   function ShowHeader($header)
@@ -1300,7 +1304,7 @@
       else
           $flv = fopen($outFile, "w+b");
       if (!$flv)
-          die(sprintf($GLOBALS['line'], "Failed to open " . $outFile));
+          Quit("Failed to open " . $outFile);
       fwrite($flv, $flvHeader, $flvHeaderLen);
       return $flv;
     }
@@ -1350,6 +1354,7 @@
   $filesize     = 0;
   $fragCount    = 0;
   $fragNum      = 0;
+  $logfile      = STDERR;
   $manifest     = "";
   $outDir       = "";
   $play         = false;
@@ -1364,7 +1369,7 @@
   );
   foreach ($extensions as $extension)
       if (!extension_loaded($extension))
-          die(sprintf($GLOBALS['line'], "You don't have $extension extension installed. please install it before continuing."));
+          Quit("You don't have $extension extension installed. please install it before continuing.");
 
   // Initialize classes
   $cc  = new cURL();
@@ -1429,11 +1434,11 @@
     }
   $f4f->outDir = $outDir;
 
-  // Disable debug and filesize when piping
+  // Redirect debug output and disable filesize when piping
   if ($play)
     {
-      $debug     = false;
       $filesize  = 0;
+      $logfile   = STDOUT;
       $f4f->play = true;
     }
 
@@ -1485,7 +1490,7 @@
           break;
       $count++;
     }
-  printf($GLOBALS['line'], "Found $fragCount fragments");
+  Message("Found $fragCount fragments");
 
   // Write flv header and metadata
   if ($fragCount)
@@ -1513,7 +1518,7 @@
   fclose($flv);
   $timeEnd   = microtime(true);
   $timeTaken = sprintf("%.2f", $timeEnd - $timeStart);
-  printf($GLOBALS['line'], "Joined $fragCount fragments in $timeTaken seconds");
+  Message("Joined $fragCount fragments in $timeTaken seconds");
 
   // Delete fragments after processing
   if ($delete)
@@ -1523,5 +1528,5 @@
               unlink($baseFilename . $i . $fileExt);
     }
 
-  printf($GLOBALS['line'], "Finished");
+  Message("Finished");
 ?>
