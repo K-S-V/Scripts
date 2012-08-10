@@ -18,13 +18,13 @@
               'debug'  => 'show debug output',
               'delete' => 'delete fragments after processing',
               'fproxy' => 'force proxy for downloading of fragments',
-              'play'   => 'dump flv file to stderr for piping',
+              'play'   => 'dump flv data to stderr for piping to another program',
               'rename' => 'rename fragments sequentially before processing'
           ),
           1 => array(
               'auth'      => 'authentication string for fragment requests',
               'duration'  => 'stop live recording after specified number of seconds',
-              'filesize'  => 'split live recording in chunks of specified MB',
+              'filesize'  => 'split output file in chunks of specified size (MB)',
               'fragments' => 'base filename for fragments',
               'manifest'  => 'manifest file for downloading of fragments',
               'outdir'    => 'destination folder for output file',
@@ -1083,7 +1083,6 @@
               }
               $fragPos += $totalTagLen;
             }
-          DebugLog("", $debug);
           $this->duration = round($packetTS / 1000, 0);
           if ($flv)
             {
@@ -1353,6 +1352,7 @@
   $duration     = 0;
   $delete       = false;
   $fileExt      = ".f4f";
+  $fileCount    = 1;
   $filesize     = 0;
   $fragCount    = 0;
   $fragNum      = 0;
@@ -1460,12 +1460,12 @@
   if ($baseFilename and (substr($baseFilename, -1) != '/') and (substr($baseFilename, -1) != ':'))
     {
       if (strrpos($baseFilename, '/'))
-          $outFile = substr($baseFilename, strrpos($baseFilename, '/') + 1) . ".flv";
+          $outFile = substr($baseFilename, strrpos($baseFilename, '/') + 1);
       else
-          $outFile = $baseFilename . ".flv";
+          $outFile = $baseFilename;
     }
   else
-      $outFile = "Joined.flv";
+      $outFile = "Joined";
   $outFile = $outDir . $outFile;
 
   // Check for available fragments and rename if required
@@ -1494,30 +1494,36 @@
     }
   Message("Found $fragCount fragments");
 
-  // Write flv header and metadata
-  if ($fragCount)
-    {
-      $flv = WriteFlvFile($outFile);
-      if (!($fragNum > 0))
-          $f4f->WriteMetadata($flv);
-    }
-  else
-      exit(1);
-
   // Process available fragments
+  if (!$fragCount)
+      exit(1);
   $timeStart = microtime(true);
   DebugLog("Joining Fragments:");
-  $opt = array(
-      'flv' => $flv,
-      'debug' => $debug
-  );
   for ($i = $fragNum + 1; $i <= $fragNum + $fragCount; $i++)
     {
       $frag = file_get_contents($baseFilename . $i . $fileExt);
+      if (!isset($opt['flv']))
+        {
+          $opt['debug'] = false;
+          $f4f->InitDecoder();
+          $f4f->DecodeFragment($frag, $i, $opt);
+          $opt['flv'] = WriteFlvFile($outFile . "-" . $fileCount++ . ".flv", $f4f->audio, $f4f->video);
+          if (!($fragNum > 0) and !$filesize)
+              $f4f->WriteMetadata($opt['flv']);
+
+          $opt['debug'] = $debug;
+          $f4f->InitDecoder();
+        }
       $f4f->DecodeFragment($frag, $i, $opt);
+      if ($filesize and ($f4f->filesize >= $filesize))
+        {
+          $f4f->filesize = 0;
+          fclose($opt['flv']);
+          unset($opt['flv']);
+        }
       echo "Processed " . ($i - $fragNum) . " fragments\r";
     }
-  fclose($flv);
+  fclose($opt['flv']);
   $timeEnd   = microtime(true);
   $timeTaken = sprintf("%.2f", $timeEnd - $timeStart);
   Message("Joined $fragCount fragments in $timeTaken seconds");
