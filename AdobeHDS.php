@@ -520,8 +520,8 @@
 
       function UpdateBootstrapInfo($cc, $bootstrapUrl)
         {
-          $retries = 0;
           $fragNum = $this->fragCount;
+          $retries = 0;
           while (($fragNum == $this->fragCount) and ($retries < 30))
             {
               $bootstrapPos = 0;
@@ -537,9 +537,8 @@
               DebugLog("Update complete, Available fragments: " . $this->fragCount);
               if ($fragNum == $this->fragCount)
                 {
+                  printf("%-79s\r", "Updating bootstrap info, Retries: " . ++$retries);
                   usleep(4000000);
-                  $retries++;
-                  printf("%-79s\r", "Updating bootstrap info, Retries: " . $retries);
                 }
             }
         }
@@ -789,11 +788,10 @@
 
                           /* Resync with latest available fragment when we are left behind due to */
                           /* slow connection and short live window on streaming server. make sure */
-                          /* to stop all existing downloads and reset the last written fragment.  */
+                          /* to reset the last written fragment.                                  */
                           if ($this->live and !$cc->active)
                             {
                               DebugLog("Trying to resync with latest available fragment");
-                              $cc->stopDownloads();
                               $this->UpdateBootstrapInfo($cc, $this->bootstrapUrl);
                               $fragNum        = $this->fragCount - 1;
                               $this->lastFrag = $fragNum;
@@ -801,8 +799,8 @@
                             }
                         }
                     }
+                  unset($download);
                 }
-              unset($download);
               usleep(40000);
             }
 
@@ -876,7 +874,7 @@
               $metadata = implode("", $metadata) . $this->media['metadata'];
               WriteByte($metadata, $this->tagHeaderLen + $metadataSize - 1, 0x09);
               WriteInt32($metadata, $this->tagHeaderLen + $metadataSize, $this->tagHeaderLen + $metadataSize);
-              if ($flv)
+              if (is_resource($flv))
                 {
                   fwrite($flv, $metadata, $this->tagHeaderLen + $metadataSize + $this->prevTagSize);
                   return true;
@@ -979,7 +977,7 @@
                                 }
                               if (($CodecID == CODEC_ID_AAC) and ($AAC_PacketType != AAC_SEQUENCE_HEADER))
                                   $this->prevAAC_Header = false;
-                              if ($flv)
+                              if (is_resource($flv))
                                 {
                                   $pAudioTagPos = ftell($flv);
                                   $status       = fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
@@ -1050,7 +1048,7 @@
                                 }
                               if (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType != AVC_SEQUENCE_HEADER))
                                   $this->prevAVC_Header = false;
-                              if ($flv)
+                              if (is_resource($flv))
                                 {
                                   $pVideoTagPos = ftell($flv);
                                   $status       = fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
@@ -1084,7 +1082,7 @@
               $fragPos += $totalTagLen;
             }
           $this->duration = round($packetTS / 1000, 0);
-          if ($flv)
+          if (is_resource($flv))
             {
               $this->filesize = ftell($flv) / (1024 * 1024);
               return true;
