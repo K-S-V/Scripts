@@ -28,6 +28,7 @@
               'fragments' => 'base filename for fragments',
               'manifest'  => 'manifest file for downloading of fragments',
               'outdir'    => 'destination folder for output file',
+              'outfile'   => 'filename to use for output file',
               'parallel'  => 'number of fragments to download simultaneously',
               'proxy'     => 'proxy for downloading of manifest',
               'quality'   => 'selected quality level (low|medium|high) or exact bitrate',
@@ -319,7 +320,7 @@
   class F4F
     {
       var $audio, $auth, $baseFilename, $baseTS, $bootstrapUrl, $baseUrl, $debug, $duration, $fileCount, $filesize;
-      var $format, $live, $media, $outDir, $parallel, $play, $quality, $rename, $video;
+      var $format, $live, $media, $outDir, $outFile, $parallel, $play, $quality, $rename, $video;
       var $prevTagSize, $tagHeaderLen;
       var $segTable, $fragTable, $segNum, $fragNum, $frags, $fragCount, $fragsPerSeg, $lastFrag, $fragUrl, $discontinuity;
       var $prevAudioTS, $prevVideoTS, $pAudioTagLen, $pVideoTagLen, $pAudioTagPos, $pVideoTagPos;
@@ -336,6 +337,7 @@
           $this->format        = "";
           $this->live          = false;
           $this->outDir        = "";
+          $this->outFile       = "";
           $this->parallel      = 8;
           $this->play          = false;
           $this->quality       = "high";
@@ -1077,7 +1079,7 @@
                   case SCRIPT_DATA:
                       break;
                   default:
-                      die(sprintf("Unknown packet type %s encountered! Encrypted fragments can't be recovered.\n", $packetType));
+                      Quit("Unknown packet type " . $packetType . " encountered! Encrypted fragments can't be recovered.");
               }
               $fragPos += $totalTagLen;
             }
@@ -1109,8 +1111,15 @@
                           $opt['debug'] = false;
                           if ($this->play)
                               $outFile = STDERR;
+                          else if ($this->outFile)
+                            {
+                              if ($opt['filesize'])
+                                  $outFile = $this->outDir . $this->outFile . "-" . $this->fileCount++ . ".flv";
+                              else
+                                  $outFile = $this->outDir . $this->outFile . ".flv";
+                            }
                           else
-                              $outFile = $this->outDir . "$this->baseFilename-" . $this->fileCount++ . ".flv";
+                              $outFile = $this->outDir . $this->baseFilename . "-" . $this->fileCount++ . ".flv";
                           $this->InitDecoder();
                           $this->DecodeFragment($frag['response'], $frag['id'], $opt);
                           $opt['file'] = WriteFlvFile($outFile, $this->audio, $this->video);
@@ -1122,6 +1131,8 @@
                       $status  = fwrite($opt['file'], $flvData, strlen($flvData));
                       if (!$status)
                           Quit("Failed to write flv data");
+                      if (!$this->play)
+                          $this->filesize = ftell($opt['file']) / (1024 * 1024);
                       $this->lastFrag = $frag['id'];
                     }
                   else
@@ -1135,7 +1146,10 @@
                   break;
 
               if ($opt['tDuration'] and (($opt['duration'] + $this->duration) >= $opt['tDuration']))
-                  die(sprintf("\n" . $GLOBALS['line'], "Finished recording " . ($opt['duration'] + $this->duration) . " seconds of content."));
+                {
+                  echo "\n";
+                  Quit("Finished recording " . ($opt['duration'] + $this->duration) . " seconds of content.");
+                }
               if ($opt['filesize'] and ($this->filesize >= $opt['filesize']))
                 {
                   $this->filesize = 0;
@@ -1357,6 +1371,7 @@
   $logfile      = STDERR;
   $manifest     = "";
   $outDir       = "";
+  $outFile      = "";
   $play         = false;
   $rename       = false;
   $start        = 0;
@@ -1379,6 +1394,8 @@
   $f4f->baseFilename =& $baseFilename;
   $f4f->debug =& $debug;
   $f4f->format =& $format;
+  $f4f->outDir =& $outDir;
+  $f4f->outFile =& $outFile;
   $f4f->rename =& $rename;
 
   // Process command line options
@@ -1409,6 +1426,8 @@
       $manifest = $cli->getParam('manifest');
   if ($cli->getParam('outdir'))
       $outDir = $cli->getParam('outdir');
+  if ($cli->getParam('outfile'))
+      $outFile = $cli->getParam('outfile');
   if ($cli->getParam('parallel'))
       $f4f->parallel = $cli->getParam('parallel');
   if ($cli->getParam('proxy'))
@@ -1432,7 +1451,9 @@
           mkdir($outDir, 0777, true);
         }
     }
-  $f4f->outDir = $outDir;
+
+  if ($outFile and (substr($outFile, -4) == ".flv"))
+      $outFile = substr($outFile, 0, -4);
 
   // Redirect debug output and disable filesize when piping
   if ($play)
@@ -1454,17 +1475,19 @@
     }
 
   // Determine output filename
-  $baseFilename = str_replace('\\', '/', $baseFilename);
-  if ($baseFilename and (substr($baseFilename, -1) != '/') and (substr($baseFilename, -1) != ':'))
+  if (!$outFile)
     {
-      if (strrpos($baseFilename, '/'))
-          $outFile = substr($baseFilename, strrpos($baseFilename, '/') + 1);
+      $baseFilename = str_replace('\\', '/', $baseFilename);
+      if ($baseFilename and (substr($baseFilename, -1) != '/') and (substr($baseFilename, -1) != ':'))
+        {
+          if (strrpos($baseFilename, '/'))
+              $outFile = substr($baseFilename, strrpos($baseFilename, '/') + 1);
+          else
+              $outFile = $baseFilename;
+        }
       else
-          $outFile = $baseFilename;
+          $outFile = "Joined";
     }
-  else
-      $outFile = "Joined";
-  $outFile = $outDir . $outFile;
 
   // Check for available fragments and rename if required
   if ($f4f->fragNum)
@@ -1505,7 +1528,10 @@
           $opt['debug'] = false;
           $f4f->InitDecoder();
           $f4f->DecodeFragment($frag, $i, $opt);
-          $opt['flv'] = WriteFlvFile($outFile . "-" . $fileCount++ . ".flv", $f4f->audio, $f4f->video);
+          if ($filesize)
+              $opt['flv'] = WriteFlvFile($outDir . $outFile . "-" . $fileCount++ . ".flv", $f4f->audio, $f4f->video);
+          else
+              $opt['flv'] = WriteFlvFile($outDir . $outFile . ".flv", $f4f->audio, $f4f->video);
           if (!($fragNum > 0) and !$filesize)
               $f4f->WriteMetadata($opt['flv']);
 
