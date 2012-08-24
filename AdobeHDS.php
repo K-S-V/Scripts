@@ -1552,9 +1552,11 @@
   $timeTaken = sprintf("%.2f", $timeEnd - $timeStart);
   Message("Joined $fragCount fragments in $timeTaken seconds");
 
-  // Delete fragments after processing
+  // Delete cookies and fragments after processing
   if ($delete)
     {
+      if (file_exists("Cookies.txt"))
+          unlink("Cookies.txt");
       for ($i = $fragNum + 1; $i <= $fragNum + $fragCount; $i++)
           if (file_exists($baseFilename . $i . $fileExt))
               unlink($baseFilename . $i . $fileExt);
