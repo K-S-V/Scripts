@@ -428,14 +428,22 @@
                   $mediaEntry =& $this->media[$bitrate];
 
                   // Extract baseUrl from manifest url
-                  $baseUrl = $manifest['url'];
-                  if (strpos($baseUrl, '?') !== false)
-                    {
-                      $baseUrl = substr($baseUrl, 0, strpos($baseUrl, '?'));
-                      $baseUrl = substr($baseUrl, 0, strrpos($baseUrl, '/'));
-                    }
+                  $baseUrl = $xml->xpath("/ns:manifest/ns:baseURL");
+                  if (isset($baseUrl[0]))
+                      $baseUrl = GetString($baseUrl[0]);
                   else
-                      $baseUrl = substr($baseUrl, 0, strrpos($baseUrl, '/'));
+                    {
+                      $baseUrl = $manifest['url'];
+                      if (strpos($baseUrl, '?') !== false)
+                        {
+                          $baseUrl = substr($baseUrl, 0, strpos($baseUrl, '?'));
+                          $baseUrl = substr($baseUrl, 0, strrpos($baseUrl, '/'));
+                        }
+                      else
+                          $baseUrl = substr($baseUrl, 0, strrpos($baseUrl, '/'));
+                    }
+                  if (!isHttpUrl($baseUrl))
+                      Quit("Provided manifest is not a valid HDS manifest.");
                   $mediaEntry['baseUrl'] = $baseUrl;
 
                   $mediaEntry['url'] = GetString($stream['url']);
@@ -446,7 +454,7 @@
                   if (isset($bootstrap[0]['url']))
                     {
                       $bootstrapUrl = GetString($bootstrap[0]['url']);
-                      if (strncasecmp($bootstrapUrl, "http", 4) != 0)
+                      if (!isHttpUrl($bootstrapUrl))
                           $bootstrapUrl = $mediaEntry['baseUrl'] . "/$bootstrapUrl";
                       $mediaEntry['bootstrapUrl'] = NormalizePath($bootstrapUrl);
                       if ($cc->get($mediaEntry['bootstrapUrl']) != 200)
@@ -477,7 +485,7 @@
               DebugLog(sprintf(" %-8d%s", $key, $this->media[$key]['url']));
             }
           DebugLog("");
-          echo "Available Bitrates: " . implode(' ', $bitrates) . "\n";
+          echo "Quality Selection:\n Available: " . implode(' ', $bitrates) . "\n";
 
           // Quality selection
           if (is_numeric($this->quality) and isset($this->media[$this->quality]))
@@ -508,6 +516,7 @@
                       $this->quality -= 1;
                 }
             }
+          echo " Selected : " . $key . "\n";
 
           $this->baseUrl = $this->media['baseUrl'];
           if (isset($this->media['bootstrapUrl']))
@@ -711,7 +720,7 @@
           if ($fragNum >= $this->fragCount)
               Quit("No fragment available for downloading");
 
-          if (strncasecmp($this->media['url'], "http", 4) == 0)
+          if (isHttpUrl($this->media['url']))
               $this->fragUrl = $this->media['url'];
           else
               $this->fragUrl = $this->baseUrl . "/" . $this->media['url'];
@@ -1252,6 +1261,14 @@
   function GetString($xmlObject)
     {
       return trim((string) $xmlObject);
+    }
+
+  function isHttpUrl($url)
+    {
+      if (strncasecmp($url, "http", 4) == 0)
+          return true;
+      else
+          return false;
     }
 
   function KeyName(array $a, $pos)
