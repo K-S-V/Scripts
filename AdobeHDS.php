@@ -680,7 +680,10 @@
                       $this->fragCount = $lastFragment['firstFragment'];
                 }
               else if ($this->fragNum === false)
+                {
                   $this->fragNum = $firstFragment['firstFragment'] - 1;
+                  $this->fragCount += $this->fragNum;
+                }
             }
         }
 
