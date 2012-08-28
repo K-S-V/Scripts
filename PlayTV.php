@@ -86,9 +86,9 @@
         {
           echo "You can use script with following switches: \n\n";
           foreach (self::$ACCEPTED[0] as $key => $value)
-              printf(" --%-13s%s\n", $key, $value);
+              printf(" --%-12s%s\n", $key, $value);
           foreach (self::$ACCEPTED[1] as $key => $value)
-              printf(" --%-13s%s\n", $key . " [param]", $value);
+              printf(" --%-12s%s\n", $key . " [param]", $value);
         }
     }
 
@@ -576,8 +576,8 @@
 
   // Global code starts here
   $header        = "KSV PlayTV Downloader";
-  $format        = "%-8s : %s\n";
-  $ChannelFormat = "%2d) %-22.22s";
+  $format        = "%-8s: %s\n";
+  $ChannelFormat = "%2d) %-22.21s";
 
   strncasecmp(php_uname('s'), "Win", 3) == 0 ? $windows = true : $windows = false;
   if ($windows)
