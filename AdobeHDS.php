@@ -8,7 +8,7 @@
   define('AVC_SEQUENCE_HEADER', 0x00);
   define('AAC_SEQUENCE_HEADER', 0x00);
   define('AVC_SEQUENCE_END', 0x02);
-  define('TIMECODE_DURATION', 8);
+  define('FRAMEGAP_DURATION', 8);
 
   class CLI
     {
@@ -360,8 +360,8 @@
           $this->video             = false;
           $this->prevTagSize       = 4;
           $this->tagHeaderLen      = 11;
-          $this->prevAudioTS       = -1;
-          $this->prevVideoTS       = -1;
+          $this->prevAudioTS       = 0;
+          $this->prevVideoTS       = 0;
           $this->pAudioTagLen      = 0;
           $this->pVideoTagLen      = 0;
           $this->pAudioTagPos      = 0;
@@ -953,7 +953,7 @@
               switch ($packetType)
               {
                   case AUDIO:
-                      if ($packetTS >= $this->prevAudioTS - TIMECODE_DURATION * 5)
+                      if ($packetTS >= $this->prevAudioTS - FRAMEGAP_DURATION * 5)
                         {
                           $FrameInfo = ReadByte($frag, $fragPos + $this->tagHeaderLen);
                           $CodecID   = ($FrameInfo & 0xF0) >> 4;
@@ -971,7 +971,6 @@
                                     {
                                       DebugLog("Writing AAC sequence header", $debug);
                                       $this->AAC_HeaderWritten = true;
-                                      $this->prevAAC_Header    = true;
                                     }
                                 }
                               else if (!$this->AAC_HeaderWritten)
@@ -983,22 +982,21 @@
                           if ($packetSize > 0)
                             {
                               // Check for packets with non-monotonic audio timestamps and fix them
-                              if (!$this->prevAAC_Header and ($packetTS <= $this->prevAudioTS))
-                                {
-                                  DebugLog(sprintf("%s\n" . $this->format, "Fixing audio timestamp", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize), $debug);
-                                  $packetTS += TIMECODE_DURATION + ($this->prevAudioTS - $packetTS);
-                                  $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
-                                }
-                              if (($CodecID == CODEC_ID_AAC) and ($AAC_PacketType != AAC_SEQUENCE_HEADER))
-                                  $this->prevAAC_Header = false;
+                              if (!(($CodecID == CODEC_ID_AAC) and (($AAC_PacketType == AAC_SEQUENCE_HEADER) or $this->prevAAC_Header)))
+                                  if (($packetTS > 0) and ($packetTS <= $this->prevAudioTS))
+                                    {
+                                      DebugLog(sprintf("%s\n" . $this->format, "Fixing audio timestamp", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize), $debug);
+                                      $packetTS += FRAMEGAP_DURATION + ($this->prevAudioTS - $packetTS);
+                                      $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
+                                    }
                               if (is_resource($flv))
                                 {
-                                  $pAudioTagPos = ftell($flv);
-                                  $status       = fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
+                                  $this->pAudioTagPos = ftell($flv);
+                                  $status             = fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
                                   if (!$status)
                                       Quit("Failed to write flv data to file");
                                   if ($debug)
-                                      DebugLog(sprintf($this->format . "%-16s", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize, $pAudioTagPos));
+                                      DebugLog(sprintf($this->format . "%-16s", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize, $this->pAudioTagPos));
                                 }
                               else
                                 {
@@ -1006,8 +1004,12 @@
                                   if ($debug)
                                       DebugLog(sprintf($this->format, "AUDIO", $packetTS, $this->prevAudioTS, $packetSize));
                                 }
-                              $this->prevAudioTS = $packetTS;
-                              $pAudioTagLen      = $totalTagLen;
+                              if (($CodecID == CODEC_ID_AAC) and ($AAC_PacketType == AAC_SEQUENCE_HEADER))
+                                  $this->prevAAC_Header = true;
+                              else
+                                  $this->prevAAC_Header = false;
+                              $this->prevAudioTS  = $packetTS;
+                              $this->pAudioTagLen = $totalTagLen;
                             }
                           else
                               DebugLog(sprintf("%s\n" . $this->format, "Skipping small sized audio packet", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize), $debug);
@@ -1018,7 +1020,7 @@
                           $this->audio = true;
                       break;
                   case VIDEO:
-                      if ($packetTS >= $this->prevVideoTS - TIMECODE_DURATION * 5)
+                      if ($packetTS >= $this->prevVideoTS - FRAMEGAP_DURATION * 5)
                         {
                           $FrameInfo = ReadByte($frag, $fragPos + $this->tagHeaderLen);
                           $FrameType = ($FrameInfo & 0xF0) >> 4;
@@ -1042,7 +1044,6 @@
                                     {
                                       DebugLog("Writing AVC sequence header", $debug);
                                       $this->AVC_HeaderWritten = true;
-                                      $this->prevAVC_Header    = true;
                                     }
                                 }
                               else if (!$this->AVC_HeaderWritten)
@@ -1054,22 +1055,21 @@
                           if ($packetSize > 0)
                             {
                               // Check for packets with non-monotonic video timestamps and fix them
-                              if (!$this->prevAVC_Header and (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType != AVC_SEQUENCE_END)) and ($packetTS <= $this->prevVideoTS))
-                                {
-                                  DebugLog(sprintf("%s\n" . $this->format, "Fixing video timestamp", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize), $debug);
-                                  $packetTS += TIMECODE_DURATION + ($this->prevVideoTS - $packetTS);
-                                  $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
-                                }
-                              if (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType != AVC_SEQUENCE_HEADER))
-                                  $this->prevAVC_Header = false;
+                              if (!(($CodecID == CODEC_ID_AVC) and (($AVC_PacketType == AVC_SEQUENCE_HEADER) or ($AVC_PacketType == AVC_SEQUENCE_END) or $this->prevAVC_Header)))
+                                  if (($packetTS > 0) and ($packetTS <= $this->prevVideoTS))
+                                    {
+                                      DebugLog(sprintf("%s\n" . $this->format, "Fixing video timestamp", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize), $debug);
+                                      $packetTS += FRAMEGAP_DURATION + ($this->prevVideoTS - $packetTS);
+                                      $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
+                                    }
                               if (is_resource($flv))
                                 {
-                                  $pVideoTagPos = ftell($flv);
-                                  $status       = fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
+                                  $this->pVideoTagPos = ftell($flv);
+                                  $status             = fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
                                   if (!$status)
                                       Quit("Failed to write flv data to file");
                                   if ($debug)
-                                      DebugLog(sprintf($this->format . "%-16s", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize, $pVideoTagPos));
+                                      DebugLog(sprintf($this->format . "%-16s", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize, $this->pVideoTagPos));
                                 }
                               else
                                 {
@@ -1077,8 +1077,12 @@
                                   if ($debug)
                                       DebugLog(sprintf($this->format, "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
                                 }
-                              $this->prevVideoTS = $packetTS;
-                              $pVideoTagLen      = $totalTagLen;
+                              if (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType == AVC_SEQUENCE_HEADER))
+                                  $this->prevAVC_Header = true;
+                              else
+                                  $this->prevAVC_Header = false;
+                              $this->prevVideoTS  = $packetTS;
+                              $this->pVideoTagLen = $totalTagLen;
                             }
                           else
                               DebugLog(sprintf("%s\n" . $this->format, "Skipping small sized video packet", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize), $debug);

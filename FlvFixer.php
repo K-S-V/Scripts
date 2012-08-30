@@ -8,7 +8,7 @@
   define('AVC_SEQUENCE_HEADER', 0x00);
   define('AAC_SEQUENCE_HEADER', 0x00);
   define('AVC_SEQUENCE_END', 0x02);
-  define('TIMECODE_DURATION', 8);
+  define('FRAMEGAP_DURATION', 8);
 
   class CLI
     {
@@ -163,22 +163,26 @@
     }
 
   ShowHeader("KSV FLV Fixer");
-  $flvHeader    = pack("H*", "464c5601050000000900000000");
-  $flvHeaderLen = strlen($flvHeader);
-  $format       = " %-8s%-16s%-16s%-8s";
-  $audio        = false;
-  $baseTS       = false;
-  $debug        = false;
-  $metadata     = true;
-  $video        = false;
-  $prevTagSize  = 4;
-  $tagHeaderLen = 11;
-  $prevAudioTS  = -1;
-  $prevVideoTS  = -1;
-  $pAudioTagLen = 0;
-  $pVideoTagLen = 0;
-  $pAudioTagPos = 0;
-  $pVideoTagPos = 0;
+  $flvHeader         = pack("H*", "464c5601050000000900000000");
+  $flvHeaderLen      = strlen($flvHeader);
+  $format            = " %-8s%-16s%-16s%-8s";
+  $audio             = false;
+  $baseTS            = false;
+  $debug             = false;
+  $metadata          = true;
+  $video             = false;
+  $prevTagSize       = 4;
+  $tagHeaderLen      = 11;
+  $prevAudioTS       = 0;
+  $prevVideoTS       = 0;
+  $pAudioTagLen      = 0;
+  $pVideoTagLen      = 0;
+  $pAudioTagPos      = 0;
+  $pVideoTagPos      = 0;
+  $prevAVC_Header    = false;
+  $prevAAC_Header    = false;
+  $AVC_HeaderWritten = false;
+  $AAC_HeaderWritten = false;
 
   $cli = new CLI();
   if ($cli->getParam('help'))
@@ -199,12 +203,7 @@
   else
       die("You must specify an output file\n");
 
-  $prevAVC_Header    = false;
-  $prevAAC_Header    = false;
-  $AVC_HeaderWritten = false;
-  $AAC_HeaderWritten = false;
-  $timeStart         = microtime(true);
-
+  $timeStart = microtime(true);
   if (file_exists($in))
     {
       $flvIn  = fopen($in, "rb");
@@ -249,7 +248,7 @@
       switch ($packetType)
       {
           case AUDIO:
-              if ($packetTS >= $prevAudioTS - TIMECODE_DURATION * 5)
+              if ($packetTS >= $prevAudioTS - FRAMEGAP_DURATION * 5)
                 {
                   $FrameInfo = ReadByte($flvTag, $tagPos + $tagHeaderLen);
                   $CodecID   = ($FrameInfo & 0xF0) >> 4;
@@ -267,7 +266,6 @@
                             {
                               DebugLog("Writing AAC sequence header");
                               $AAC_HeaderWritten = true;
-                              $prevAAC_Header    = true;
                             }
                         }
                       else if (!$AAC_HeaderWritten)
@@ -279,18 +277,21 @@
                   if ($packetSize > 0)
                     {
                       // Check for packets with non-monotonic audio timestamps and fix them
-                      if (!$prevAAC_Header and ($packetTS <= $prevAudioTS))
-                        {
-                          DebugLog(sprintf("%s\n" . $format, "Fixing audio timestamp", "AUDIO", $packetTS, $prevAudioTS, $packetSize));
-                          $packetTS += TIMECODE_DURATION + ($prevAudioTS - $packetTS);
-                          WriteFlvTimestamp($flvTag, $tagPos, $packetTS);
-                        }
-                      if (($CodecID == CODEC_ID_AAC) and ($AAC_PacketType != AAC_SEQUENCE_HEADER))
-                          $prevAAC_Header = false;
+                      if (!(($CodecID == CODEC_ID_AAC) and (($AAC_PacketType == AAC_SEQUENCE_HEADER) or $prevAAC_Header)))
+                          if (($packetTS > 0) and ($packetTS <= $prevAudioTS))
+                            {
+                              DebugLog(sprintf("%s\n" . $format, "Fixing audio timestamp", "AUDIO", $packetTS, $prevAudioTS, $packetSize));
+                              $packetTS += FRAMEGAP_DURATION + ($prevAudioTS - $packetTS);
+                              WriteFlvTimestamp($flvTag, $tagPos, $packetTS);
+                            }
                       $pAudioTagPos = ftell($flvOut);
                       fwrite($flvOut, $flvTag, $totalTagLen);
                       if ($debug)
                           DebugLog(sprintf($format . "%-16s", "AUDIO", $packetTS, $prevAudioTS, $packetSize, $pAudioTagPos));
+                      if (($CodecID == CODEC_ID_AAC) and ($AAC_PacketType == AAC_SEQUENCE_HEADER))
+                          $prevAAC_Header = true;
+                      else
+                          $prevAAC_Header = false;
                       $prevAudioTS  = $packetTS;
                       $pAudioTagLen = $totalTagLen;
                     }
@@ -303,7 +304,7 @@
                   $audio = true;
               break;
           case VIDEO:
-              if ($packetTS >= $prevVideoTS - TIMECODE_DURATION * 5)
+              if ($packetTS >= $prevVideoTS - FRAMEGAP_DURATION * 5)
                 {
                   $FrameInfo = ReadByte($flvTag, $tagPos + $tagHeaderLen);
                   $FrameType = ($FrameInfo & 0xF0) >> 4;
@@ -327,7 +328,6 @@
                             {
                               DebugLog("Writing AVC sequence header");
                               $AVC_HeaderWritten = true;
-                              $prevAVC_Header    = true;
                             }
                         }
                       else if (!$AVC_HeaderWritten)
@@ -339,18 +339,21 @@
                   if ($packetSize > 0)
                     {
                       // Check for packets with non-monotonic video timestamps and fix them
-                      if (!$prevAVC_Header and (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType != AVC_SEQUENCE_END)) and ($packetTS <= $prevVideoTS))
-                        {
-                          DebugLog(sprintf("%s\n" . $format, "Fixing video timestamp", "VIDEO", $packetTS, $prevVideoTS, $packetSize));
-                          $packetTS += TIMECODE_DURATION + ($prevVideoTS - $packetTS);
-                          WriteFlvTimestamp($flvTag, $tagPos, $packetTS);
-                        }
-                      if (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType != AVC_SEQUENCE_HEADER))
-                          $prevAVC_Header = false;
+                      if (!(($CodecID == CODEC_ID_AVC) and (($AVC_PacketType == AVC_SEQUENCE_HEADER) or ($AVC_PacketType == AVC_SEQUENCE_END) or $prevAVC_Header)))
+                          if (($packetTS > 0) and ($packetTS <= $prevVideoTS))
+                            {
+                              DebugLog(sprintf("%s\n" . $format, "Fixing video timestamp", "VIDEO", $packetTS, $prevVideoTS, $packetSize));
+                              $packetTS += FRAMEGAP_DURATION + ($prevVideoTS - $packetTS);
+                              WriteFlvTimestamp($flvTag, $tagPos, $packetTS);
+                            }
                       $pVideoTagPos = ftell($flvOut);
                       fwrite($flvOut, $flvTag, $totalTagLen);
                       if ($debug)
                           DebugLog(sprintf($format . "%-16s", "VIDEO", $packetTS, $prevVideoTS, $packetSize, $pVideoTagPos));
+                      if (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType == AVC_SEQUENCE_HEADER))
+                          $prevAVC_Header = true;
+                      else
+                          $prevAVC_Header = false;
                       $prevVideoTS  = $packetTS;
                       $pVideoTagLen = $totalTagLen;
                     }
