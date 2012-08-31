@@ -65,7 +65,7 @@
                           $GLOBALS['baseFilename'] = $arg;
                       else
                         {
-                          echo "'$arg' is an invalid switch, use --help to display valid switches\n";
+                          echo "'$arg' is an invalid switch, use --help to display valid switches.\n";
                           exit(1);
                         }
                     }
@@ -79,7 +79,7 @@
                           $doubleParam = $arg;
                       else if (!isset(self::$ACCEPTED[0][$arg]))
                         {
-                          echo "there's no '$arg' switch, use --help to display all switches\n";
+                          echo "there's no '$arg' switch, use --help to display all switches.\n";
                           exit(1);
                         }
                     }
@@ -123,9 +123,9 @@
 
       function cURL($cookies = true, $cookie = 'Cookies.txt', $compression = 'gzip', $proxy = '')
         {
-          $this->headers[]   = 'Accept: image/gif, image/x-bitmap, image/jpeg, image/pjpeg';
+          $this->headers[]   = 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
           $this->headers[]   = 'Connection: Keep-Alive';
-          $this->headers[]   = 'Content-type: application/x-www-form-urlencoded;charset=UTF-8';
+          $this->headers[]   = 'Content-Type: application/x-www-form-urlencoded;charset=UTF-8';
           $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:15.0) Gecko/20100101 Firefox/15.0';
           $this->compression = $compression;
           $this->proxy       = $proxy;
@@ -142,7 +142,7 @@
               $this->cookie_file = $cookie_file;
           else
             {
-              $file = fopen($cookie_file, 'w') or $this->error('The cookie file could not be opened. Make sure this directory has the correct permissions');
+              $file = fopen($cookie_file, 'w') or $this->error('The cookie file could not be opened. Make sure this directory has the correct permissions.');
               $this->cookie_file = $cookie_file;
               fclose($file);
             }
