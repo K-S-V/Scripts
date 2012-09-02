@@ -613,6 +613,8 @@
               $segEntry =& $this->segTable[$firstSegment];
               $segEntry['firstSegment']        = $firstSegment;
               $segEntry['fragmentsPerSegment'] = ReadInt32($asrt, $pos + 4);
+              if ($segEntry['fragmentsPerSegment'] & 0x80000000)
+                  $segEntry['fragmentsPerSegment'] = 0;
               $pos += 8;
               DebugLog(sprintf(" %-8s%-10s", $segEntry['firstSegment'], $segEntry['fragmentsPerSegment']));
             }
@@ -621,7 +623,7 @@
           $this->fragCount = $lastSegment['fragmentsPerSegment'];
 
           // Use segment table in case of multiple segments
-          if ($this->live and (count($this->segTable) > 1))
+          if (count($this->segTable) > 1)
             {
               $secondLastSegment = prev($this->segTable);
               if ($this->fragNum === false)
@@ -753,7 +755,7 @@
 
                   /* Increase or decrease segment number if current fragment is not available */
                   /* in selected segment range                                                */
-                  if ($this->segNum > 1)
+                  if (count($this->segTable) > 1)
                       if ($fragNum > ($segNum * $this->fragsPerSeg))
                           $segNum++;
                       else if ($fragNum <= (($segNum - 1) * $this->fragsPerSeg))
@@ -1135,7 +1137,12 @@
                                   $outFile = $this->outDir . $this->outFile . ".flv";
                             }
                           else
-                              $outFile = $this->outDir . $this->baseFilename . "-" . $this->fileCount++ . ".flv";
+                            {
+                              if ($opt['filesize'])
+                                  $outFile = $this->outDir . $this->baseFilename . "-" . $this->fileCount++ . ".flv";
+                              else
+                                  $outFile = $this->outDir . $this->baseFilename . ".flv";
+                            }
                           $this->InitDecoder();
                           $this->DecodeFragment($frag['response'], $frag['id'], $opt);
                           $opt['file'] = WriteFlvFile($outFile, $this->audio, $this->video);
