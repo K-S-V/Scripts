@@ -485,7 +485,7 @@
               DebugLog(sprintf(" %-8d%s", $key, $this->media[$key]['url']));
             }
           DebugLog("");
-          echo "Quality Selection:\n Available: " . implode(' ', $bitrates) . "\n";
+          Message("Quality Selection:\n Available: " . implode(' ', $bitrates));
 
           // Quality selection
           if (is_numeric($this->quality) and isset($this->media[$this->quality]))
@@ -516,7 +516,7 @@
                       $this->quality -= 1;
                 }
             }
-          echo " Selected : " . $key . "\n";
+          Message(" Selected : " . $key);
 
           $this->baseUrl = $this->media['baseUrl'];
           if (isset($this->media['bootstrapUrl']))
@@ -548,7 +548,7 @@
               DebugLog("Update complete, Available fragments: " . $this->fragCount);
               if ($fragNum == $this->fragCount)
                 {
-                  printf("%-79s\r", "Updating bootstrap info, Retries: " . ++$retries);
+                  Message("Updating bootstrap info, Retries: " . ++$retries, true);
                   usleep(4000000);
                 }
             }
@@ -737,7 +737,7 @@
               while ((count($cc->ch) < $this->parallel) and ($fragNum < $this->fragCount))
                 {
                   $fragNum += 1;
-                  printf("%-79s\r", "Downloading $fragNum/$this->fragCount fragments");
+                  Message("Downloading $fragNum/$this->fragCount fragments", true);
                   if (in_array_field($fragNum, "firstFragment", $this->fragTable, true))
                       $this->discontinuity = value_in_array_field($fragNum, "firstFragment", "discontinuityIndicator", $this->fragTable, true);
                   if (($this->discontinuity == 1) or ($this->discontinuity == 3))
@@ -820,7 +820,7 @@
               usleep(40000);
             }
 
-          echo "\n";
+          Message("");
           DebugLog("\nAll fragments downloaded successfully\n");
           $cc->stopDownloads();
         }
@@ -1169,10 +1169,7 @@
                   break;
 
               if ($opt['tDuration'] and (($opt['duration'] + $this->duration) >= $opt['tDuration']))
-                {
-                  echo "\n";
-                  Quit("Finished recording " . ($opt['duration'] + $this->duration) . " seconds of content.");
-                }
+                  Quit("\nFinished recording " . ($opt['duration'] + $this->duration) . " seconds of content.");
               if ($opt['filesize'] and ($this->filesize >= $opt['filesize']))
                 {
                   $this->filesize = 0;
@@ -1291,9 +1288,15 @@
       return key($temp);
     }
 
-  function Message($msg)
+  function Message($msg, $progress = false)
     {
-      printf($GLOBALS['line'], $msg);
+      if (!$GLOBALS['play'])
+        {
+          if ($progress)
+              printf("%-79s\r", $msg);
+          else
+              printf("%s\n", $msg);
+        }
     }
 
   function NormalizePath($path)
@@ -1321,7 +1324,10 @@
 
   function Quit($msg)
     {
-      die(sprintf($GLOBALS['line'], $msg));
+      if (!$GLOBALS['play'])
+          die(sprintf("%s\n", $msg));
+      else
+          die();
     }
 
   function ShowHeader($header)
@@ -1387,9 +1393,9 @@
       return false;
     }
 
+  // Global code starts here
   ShowHeader("KSV Adobe HDS Downloader");
   $format       = " %-8s%-16s%-16s%-8s";
-  $line         = "%-79s\n";
   $baseFilename = "";
   $debug        = false;
   $duration     = 0;
@@ -1415,7 +1421,7 @@
   );
   foreach ($extensions as $extension)
       if (!extension_loaded($extension))
-          Quit("You don't have $extension extension installed. please install it before continuing.");
+          Quit("You don't have '$extension' extension installed. please install it before continuing.");
 
   // Initialize classes
   $cc  = new cURL();
@@ -1427,6 +1433,7 @@
   $f4f->format =& $format;
   $f4f->outDir =& $outDir;
   $f4f->outFile =& $outFile;
+  $f4f->play =& $play;
   $f4f->rename =& $rename;
 
   // Process command line options
@@ -1489,9 +1496,8 @@
   // Redirect debug output and disable filesize when piping
   if ($play)
     {
-      $filesize  = 0;
-      $logfile   = STDOUT;
-      $f4f->play = true;
+      $filesize = 0;
+      $logfile  = STDOUT;
     }
 
   // Download fragments when manifest is available
@@ -1576,7 +1582,7 @@
           fclose($opt['flv']);
           unset($opt['flv']);
         }
-      echo "Processed " . ($i - $fragNum) . " fragments\r";
+      Message("Processed " . ($i - $fragNum) . " fragments", true);
     }
   fclose($opt['flv']);
   $timeEnd   = microtime(true);
