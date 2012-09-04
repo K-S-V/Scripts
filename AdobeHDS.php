@@ -1169,7 +1169,7 @@
                   break;
 
               if ($opt['tDuration'] and (($opt['duration'] + $this->duration) >= $opt['tDuration']))
-                  Quit("\nFinished recording " . ($opt['duration'] + $this->duration) . " seconds of content.");
+                  Quit("\nFinished recording " . ($opt['duration'] + $this->duration) . " seconds of content.", 0);
               if ($opt['filesize'] and ($this->filesize >= $opt['filesize']))
                 {
                   $this->filesize = 0;
@@ -1322,12 +1322,15 @@
       return $outPath;
     }
 
-  function Quit($msg)
+  function Quit($msg, $code = 1)
     {
       if (!$GLOBALS['play'])
-          die(sprintf("%s\n", $msg));
+        {
+          printf("%s\n", $msg);
+          exit($code);
+        }
       else
-          die();
+          exit($code);
     }
 
   function ShowHeader($header)
