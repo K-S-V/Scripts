@@ -4,12 +4,13 @@
       protected static $ACCEPTED = array(
           0 => array(
               'help'  => 'displays this help',
-              'quiet' => 'disables unnecessary output',
-              'print' => 'only prints the base rtmpdump command, does not start anything',
-              'list'  => 'displays formatted channels list and exits'
+              'list'  => 'display formatted channels list and exit',
+              'print' => 'only print the base rtmpdump command, don\'t start anything',
+              'quiet' => 'disables unnecessary output'
           ),
           1 => array(
-              'url' => 'immediately uses [param] as url without displaying channels list'
+              'proxy' => 'use proxy to retrieve channel information',
+              'url'   => 'use specified url without displaying channels list'
           )
       );
       var $params = array();
@@ -86,9 +87,9 @@
         {
           echo "You can use script with following switches: \n\n";
           foreach (self::$ACCEPTED[0] as $key => $value)
-              printf(" --%-12s%s\n", $key, $value);
+              printf(" --%-14s%s\n", $key, $value);
           foreach (self::$ACCEPTED[1] as $key => $value)
-              printf(" --%-12s%s\n", $key . " [param]", $value);
+              printf(" --%-5s%-9s%s\n", $key, " [param]", $value);
         }
     }
 
@@ -464,9 +465,7 @@
       qecho("Retrieving html . . .\n");
 
       // Retrieve channel id and primary key
-      date_default_timezone_set("America/New_York");
-      $date      = new DateTime();
-      $timestamp = $date->getTimestamp();
+      $timestamp = time();
       $player_id = $url;
       $init      = $cc->get("http://tvplayer.playtv.fr/js/$player_id.js?_=$timestamp");
       preg_match("/b:[^{]*?({[^}]+})/i", $init, $init);
@@ -590,10 +589,9 @@
     }
   else
       $vlc = "vlc";
-  $cli       = new CLI();
-  $cc        = new cURL();
-  $xxtea     = new Crypt_XXTEA();
-  $cc->proxy = '';
+  $cli   = new CLI();
+  $cc    = new cURL();
+  $xxtea = new Crypt_XXTEA();
 
   ShowHeader($header);
   if ($cli->getParam('help'))
@@ -601,6 +599,8 @@
       $cli->displayHelp();
       Close("");
     }
+  if ($cli->getParam('proxy'))
+      $cc->proxy = $cli->getParam('proxy');
 
   if ($cli->getParam('url'))
     {
