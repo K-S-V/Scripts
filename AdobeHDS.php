@@ -1506,6 +1506,8 @@
   // Download fragments when manifest is available
   if ($manifest)
     {
+      if (!isHttpUrl($manifest))
+          $manifest = "http://" . $manifest;
       $opt = array(
           'start' => $start,
           'tDuration' => $duration,
