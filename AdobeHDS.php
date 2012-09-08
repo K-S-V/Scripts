@@ -382,12 +382,12 @@
         {
           $status = $cc->get($manifest);
           if ($status == 403)
-              Quit("Access Denied! Unable to download manifest.");
+              LogError("Access Denied! Unable to download manifest.");
           else if ($status != 200)
-              Quit("Unable to download manifest");
+              LogError("Unable to download manifest");
           $xml = simplexml_load_string(trim($cc->response));
           if (!$xml)
-              Quit("Failed to load xml");
+              LogError("Failed to load xml");
           $namespace = $xml->getDocNamespaces();
           $namespace = $namespace[''];
           $xml->registerXPathNamespace("ns", $namespace);
@@ -396,7 +396,7 @@
 
       function ParseManifest($cc, $manifest)
         {
-          Message("Processing manifest info....");
+          LogInfo("Processing manifest info....");
           $xml     = $this->GetManifest($cc, $manifest);
           $baseUrl = $xml->xpath("/ns:manifest/ns:baseURL");
           if (isset($baseUrl[0]))
@@ -449,7 +449,7 @@
                           $baseUrl = substr($baseUrl, 0, strrpos($baseUrl, '/'));
                     }
                   if (!isHttpUrl($baseUrl))
-                      Quit("Provided manifest is not a valid HDS manifest.");
+                      LogError("Provided manifest is not a valid HDS manifest");
                   $mediaEntry['baseUrl'] = $baseUrl;
 
                   $mediaEntry['url'] = GetString($stream['url']);
@@ -464,7 +464,7 @@
                           $bootstrapUrl = $mediaEntry['baseUrl'] . "/$bootstrapUrl";
                       $mediaEntry['bootstrapUrl'] = NormalizePath($bootstrapUrl);
                       if ($cc->get($mediaEntry['bootstrapUrl']) != 200)
-                          Quit("Failed to get bootstrap info");
+                          LogError("Failed to get bootstrap info");
                       $mediaEntry['bootstrap'] = $cc->response;
                     }
                   else
@@ -480,18 +480,18 @@
           // Available qualities
           $bitrates = array();
           if (!count($this->media))
-              Quit("No media entry found");
+              LogError("No media entry found");
           krsort($this->media, SORT_NUMERIC);
-          DebugLog("Manifest Entries:\n");
-          DebugLog(sprintf(" %-8s%s", "Bitrate", "URL"));
+          LogDebug("Manifest Entries:\n");
+          LogDebug(sprintf(" %-8s%s", "Bitrate", "URL"));
           for ($i = 0; $i < count($this->media); $i++)
             {
               $key        = KeyName($this->media, $i);
               $bitrates[] = $key;
-              DebugLog(sprintf(" %-8d%s", $key, $this->media[$key]['url']));
+              LogDebug(sprintf(" %-8d%s", $key, $this->media[$key]['url']));
             }
-          DebugLog("");
-          Message("Quality Selection:\n Available: " . implode(' ', $bitrates));
+          LogDebug("");
+          LogInfo("Quality Selection:\n Available: " . implode(' ', $bitrates));
 
           // Quality selection
           if (is_numeric($this->quality) and isset($this->media[$this->quality]))
@@ -522,7 +522,7 @@
                       $this->quality -= 1;
                 }
             }
-          Message(" Selected : " . $key);
+          LogInfo(" Selected : " . $key);
 
           $this->baseUrl = $this->media['baseUrl'];
           if (isset($this->media['bootstrapUrl']))
@@ -532,7 +532,7 @@
           if ($boxType == "abst")
               $this->ParseBootstrapBox($bootstrapInfo, $pos);
           else
-              Quit("Failed to parse bootstrap info");
+              LogError("Failed to parse bootstrap info");
         }
 
       function UpdateBootstrapInfo($cc, $bootstrapUrl)
@@ -542,19 +542,19 @@
           while (($fragNum == $this->fragCount) and ($retries < 30))
             {
               $bootstrapPos = 0;
-              DebugLog("Updating bootstrap info, Available fragments: " . $this->fragCount);
+              LogDebug("Updating bootstrap info, Available fragments: " . $this->fragCount);
               if ($cc->get($bootstrapUrl) != 200)
-                  Quit("Failed to refresh bootstrap info");
+                  LogError("Failed to refresh bootstrap info");
               $bootstrapInfo = $cc->response;
               ReadBoxHeader($bootstrapInfo, $bootstrapPos, $boxType, $boxSize);
               if ($boxType == "abst")
                   $this->ParseBootstrapBox($bootstrapInfo, $bootstrapPos);
               else
-                  Quit("Failed to parse bootstrap info");
-              DebugLog("Update complete, Available fragments: " . $this->fragCount);
+                  LogError("Failed to parse bootstrap info");
+              LogDebug("Update complete, Available fragments: " . $this->fragCount);
               if ($fragNum == $this->fragCount)
                 {
-                  Message("Updating bootstrap info, Retries: " . ++$retries, true);
+                  LogInfo("Updating bootstrap info, Retries: " . ++$retries, true);
                   usleep(4000000);
                 }
             }
@@ -612,7 +612,7 @@
               $qualitySegmentUrlModifiers[$i] = ReadString($asrt, $pos);
           $segCount = ReadInt32($asrt, $pos);
           $pos += 4;
-          DebugLog(sprintf("%s:\n\n %-8s%-10s", "Segment Entries", "Number", "Fragments"));
+          LogDebug(sprintf("%s:\n\n %-8s%-10s", "Segment Entries", "Number", "Fragments"));
           for ($i = 0; $i < $segCount; $i++)
             {
               $firstSegment = ReadInt32($asrt, $pos);
@@ -622,9 +622,9 @@
               if ($segEntry['fragmentsPerSegment'] & 0x80000000)
                   $segEntry['fragmentsPerSegment'] = 0;
               $pos += 8;
-              DebugLog(sprintf(" %-8s%-10s", $segEntry['firstSegment'], $segEntry['fragmentsPerSegment']));
+              LogDebug(sprintf(" %-8s%-10s", $segEntry['firstSegment'], $segEntry['fragmentsPerSegment']));
             }
-          DebugLog("");
+          LogDebug("");
           $lastSegment     = end($this->segTable);
           $this->fragCount = $lastSegment['fragmentsPerSegment'];
 
@@ -656,7 +656,7 @@
               $qualitySegmentUrlModifiers[$i] = ReadString($afrt, $pos);
           $fragEntries = ReadInt32($afrt, $pos);
           $pos += 4;
-          DebugLog(sprintf("%s:\n\n %-8s%-16s%-16s%-16s", "Fragment Entries", "Number", "Timestamp", "Duration", "Discontinuity"));
+          LogDebug(sprintf("%s:\n\n %-8s%-16s%-16s%-16s", "Fragment Entries", "Number", "Timestamp", "Duration", "Discontinuity"));
           for ($i = 0; $i < $fragEntries; $i++)
             {
               $firstFragment = ReadInt32($afrt, $pos);
@@ -668,9 +668,9 @@
               $pos += 16;
               if ($fragEntry['fragmentDuration'] == 0)
                   $fragEntry['discontinuityIndicator'] = ReadByte($afrt, $pos++);
-              DebugLog(sprintf(" %-8s%-16s%-16s%-16s", $fragEntry['firstFragment'], $fragEntry['firstFragmentTimestamp'], $fragEntry['fragmentDuration'], $fragEntry['discontinuityIndicator']));
+              LogDebug(sprintf(" %-8s%-16s%-16s%-16s", $fragEntry['firstFragment'], $fragEntry['firstFragmentTimestamp'], $fragEntry['fragmentDuration'], $fragEntry['discontinuityIndicator']));
             }
-          DebugLog("");
+          LogDebug("");
 
           // Use fragment table in case of single segment
           if (count($this->segTable) == 1)
@@ -729,21 +729,21 @@
               $this->baseFilename .= "Seg" . $segNum . "-Frag";
 
           if ($fragNum >= $this->fragCount)
-              Quit("No fragment available for downloading");
+              LogError("No fragment available for downloading");
 
           if (isHttpUrl($this->media['url']))
               $this->fragUrl = $this->media['url'];
           else
               $this->fragUrl = $this->baseUrl . "/" . $this->media['url'];
           $this->fragUrl = NormalizePath($this->fragUrl);
-          DebugLog("Downloading Fragments:\n");
+          LogDebug("Downloading Fragments:\n");
 
           while (($fragNum < $this->fragCount) or $cc->active)
             {
               while ((count($cc->ch) < $this->parallel) and ($fragNum < $this->fragCount))
                 {
                   $fragNum += 1;
-                  Message("Downloading $fragNum/$this->fragCount fragments", true);
+                  LogInfo("Downloading $fragNum/$this->fragCount fragments", true);
                   if (in_array_field($fragNum, "firstFragment", $this->fragTable, true))
                       $this->discontinuity = value_in_array_field($fragNum, "firstFragment", "discontinuityIndicator", $this->fragTable, true);
                   if (($this->discontinuity == 1) or ($this->discontinuity == 3))
@@ -755,7 +755,7 @@
                     }
                   if (file_exists($this->baseFilename . $fragNum))
                     {
-                      DebugLog("Fragment $fragNum is already downloaded");
+                      LogDebug("Fragment $fragNum is already downloaded");
                       continue;
                     }
 
@@ -767,7 +767,7 @@
                       else if ($fragNum <= (($segNum - 1) * $this->fragsPerSeg))
                           $segNum--;
 
-                  DebugLog("Adding fragment $fragNum to download queue");
+                  LogDebug("Adding fragment $fragNum to download queue");
                   $cc->addDownload($this->fragUrl . "Seg" . $segNum . "-Frag" . $fragNum . $this->auth, $fragNum);
                 }
 
@@ -780,7 +780,7 @@
                         {
                           if ($this->VerifyFragment($download['response']))
                             {
-                              DebugLog("Fragment " . $this->baseFilename . $download['id'] . " successfully downloaded");
+                              LogDebug("Fragment " . $this->baseFilename . $download['id'] . " successfully downloaded");
                               if ($this->live)
                                   $this->WriteLiveFragment($download, $opt);
                               else
@@ -788,22 +788,22 @@
                             }
                           else
                             {
-                              DebugLog("Fragment " . $download['id'] . " failed to verify");
-                              DebugLog("Adding fragment " . $download['id'] . " to download queue");
+                              LogDebug("Fragment " . $download['id'] . " failed to verify");
+                              LogDebug("Adding fragment " . $download['id'] . " to download queue");
                               $cc->addDownload($download['url'], $download['id']);
                             }
                         }
                       else if ($download['status'] === false)
                         {
-                          DebugLog("Fragment " . $download['id'] . " failed to download");
-                          DebugLog("Adding fragment " . $download['id'] . " to download queue");
+                          LogDebug("Fragment " . $download['id'] . " failed to download");
+                          LogDebug("Adding fragment " . $download['id'] . " to download queue");
                           $cc->addDownload($download['url'], $download['id']);
                         }
                       else if ($download['status'] == 403)
-                          Quit("Access Denied! Unable to download fragments.");
+                          LogError("Access Denied! Unable to download fragments.");
                       else
                         {
-                          DebugLog("Fragment " . $download['id'] . " doesn't exist, Status: " . $download['status']);
+                          LogDebug("Fragment " . $download['id'] . " doesn't exist, Status: " . $download['status']);
                           if ($this->live)
                               $this->frags[$download['id']] = false;
                           $this->rename = true;
@@ -813,7 +813,7 @@
                           /* to reset the last written fragment.                                  */
                           if ($this->live and !$cc->active)
                             {
-                              DebugLog("Trying to resync with latest available fragment");
+                              LogDebug("Trying to resync with latest available fragment");
                               $this->UpdateBootstrapInfo($cc, $this->bootstrapUrl);
                               $fragNum        = $this->fragCount - 1;
                               $this->lastFrag = $fragNum;
@@ -826,8 +826,8 @@
               usleep(40000);
             }
 
-          Message("");
-          DebugLog("\nAll fragments downloaded successfully\n");
+          LogInfo("");
+          LogDebug("\nAll fragments downloaded successfully\n");
           $cc->stopDownloads();
         }
 
@@ -926,7 +926,7 @@
           $fragLen = strlen($frag);
           if (!$this->VerifyFragment($frag))
             {
-              Message("Skipping fragment number $fragNum");
+              LogInfo("Skipping fragment number $fragNum");
               return false;
             }
 
@@ -938,7 +938,7 @@
               $fragPos += $boxSize;
             }
 
-          DebugLog(sprintf("\nFragment %d:\n" . $this->format . "%-16s", $fragNum, "Type", "CurrentTS", "PreviousTS", "Size", "Position"), $debug);
+          LogDebug(sprintf("\nFragment %d:\n" . $this->format . "%-16s", $fragNum, "Type", "CurrentTS", "PreviousTS", "Size", "Position"), $debug);
           while ($fragPos < $fragLen)
             {
               $packetType = ReadByte($frag, $fragPos);
@@ -972,18 +972,18 @@
                                 {
                                   if ($this->AAC_HeaderWritten)
                                     {
-                                      DebugLog(sprintf("%s\n" . $this->format, "Skipping AAC sequence header", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize), $debug);
+                                      LogDebug(sprintf("%s\n" . $this->format, "Skipping AAC sequence header", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize), $debug);
                                       break;
                                     }
                                   else
                                     {
-                                      DebugLog("Writing AAC sequence header", $debug);
+                                      LogDebug("Writing AAC sequence header", $debug);
                                       $this->AAC_HeaderWritten = true;
                                     }
                                 }
                               else if (!$this->AAC_HeaderWritten)
                                 {
-                                  DebugLog(sprintf("%s\n" . $this->format, "Discarding audio packet received before AAC sequence header", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize), $debug);
+                                  LogDebug(sprintf("%s\n" . $this->format, "Discarding audio packet received before AAC sequence header", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize), $debug);
                                   break;
                                 }
                             }
@@ -993,7 +993,7 @@
                               if (!(($CodecID == CODEC_ID_AAC) and (($AAC_PacketType == AAC_SEQUENCE_HEADER) or $this->prevAAC_Header)))
                                   if (($packetTS > 0) and ($packetTS <= $this->prevAudioTS))
                                     {
-                                      DebugLog(sprintf("%s\n" . $this->format, "Fixing audio timestamp", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize), $debug);
+                                      LogDebug(sprintf("%s\n" . $this->format, "Fixing audio timestamp", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize), $debug);
                                       $packetTS += FRAMEGAP_DURATION + ($this->prevAudioTS - $packetTS);
                                       $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
                                     }
@@ -1002,15 +1002,15 @@
                                   $this->pAudioTagPos = ftell($flv);
                                   $status             = fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
                                   if (!$status)
-                                      Quit("Failed to write flv data to file");
+                                      LogError("Failed to write flv data to file");
                                   if ($debug)
-                                      DebugLog(sprintf($this->format . "%-16s", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize, $this->pAudioTagPos));
+                                      LogDebug(sprintf($this->format . "%-16s", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize, $this->pAudioTagPos));
                                 }
                               else
                                 {
                                   $flvData .= substr($frag, $fragPos, $totalTagLen);
                                   if ($debug)
-                                      DebugLog(sprintf($this->format, "AUDIO", $packetTS, $this->prevAudioTS, $packetSize));
+                                      LogDebug(sprintf($this->format, "AUDIO", $packetTS, $this->prevAudioTS, $packetSize));
                                 }
                               if (($CodecID == CODEC_ID_AAC) and ($AAC_PacketType == AAC_SEQUENCE_HEADER))
                                   $this->prevAAC_Header = true;
@@ -1020,10 +1020,10 @@
                               $this->pAudioTagLen = $totalTagLen;
                             }
                           else
-                              DebugLog(sprintf("%s\n" . $this->format, "Skipping small sized audio packet", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize), $debug);
+                              LogDebug(sprintf("%s\n" . $this->format, "Skipping small sized audio packet", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize), $debug);
                         }
                       else
-                          DebugLog(sprintf("%s\n" . $this->format, "Skipping audio packet in fragment $fragNum", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize), $debug);
+                          LogDebug(sprintf("%s\n" . $this->format, "Skipping audio packet in fragment $fragNum", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize), $debug);
                       if (!$this->audio)
                           $this->audio = true;
                       break;
@@ -1035,7 +1035,7 @@
                           $CodecID   = $FrameInfo & 0x0F;
                           if ($FrameType == FRAME_TYPE_INFO)
                             {
-                              DebugLog(sprintf("%s\n" . $this->format, "Skipping video info frame", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize), $debug);
+                              LogDebug(sprintf("%s\n" . $this->format, "Skipping video info frame", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize), $debug);
                               break;
                             }
                           if ($CodecID == CODEC_ID_AVC)
@@ -1045,18 +1045,18 @@
                                 {
                                   if ($this->AVC_HeaderWritten)
                                     {
-                                      DebugLog(sprintf("%s\n" . $this->format, "Skipping AVC sequence header", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize), $debug);
+                                      LogDebug(sprintf("%s\n" . $this->format, "Skipping AVC sequence header", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize), $debug);
                                       break;
                                     }
                                   else
                                     {
-                                      DebugLog("Writing AVC sequence header", $debug);
+                                      LogDebug("Writing AVC sequence header", $debug);
                                       $this->AVC_HeaderWritten = true;
                                     }
                                 }
                               else if (!$this->AVC_HeaderWritten)
                                 {
-                                  DebugLog(sprintf("%s\n" . $this->format, "Discarding video packet received before AVC sequence header", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize), $debug);
+                                  LogDebug(sprintf("%s\n" . $this->format, "Discarding video packet received before AVC sequence header", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize), $debug);
                                   break;
                                 }
                             }
@@ -1066,7 +1066,7 @@
                               if (!(($CodecID == CODEC_ID_AVC) and (($AVC_PacketType == AVC_SEQUENCE_HEADER) or ($AVC_PacketType == AVC_SEQUENCE_END) or $this->prevAVC_Header)))
                                   if (($packetTS > 0) and ($packetTS <= $this->prevVideoTS))
                                     {
-                                      DebugLog(sprintf("%s\n" . $this->format, "Fixing video timestamp", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize), $debug);
+                                      LogDebug(sprintf("%s\n" . $this->format, "Fixing video timestamp", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize), $debug);
                                       $packetTS += FRAMEGAP_DURATION + ($this->prevVideoTS - $packetTS);
                                       $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
                                     }
@@ -1075,15 +1075,15 @@
                                   $this->pVideoTagPos = ftell($flv);
                                   $status             = fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
                                   if (!$status)
-                                      Quit("Failed to write flv data to file");
+                                      LogError("Failed to write flv data to file");
                                   if ($debug)
-                                      DebugLog(sprintf($this->format . "%-16s", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize, $this->pVideoTagPos));
+                                      LogDebug(sprintf($this->format . "%-16s", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize, $this->pVideoTagPos));
                                 }
                               else
                                 {
                                   $flvData .= substr($frag, $fragPos, $totalTagLen);
                                   if ($debug)
-                                      DebugLog(sprintf($this->format, "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
+                                      LogDebug(sprintf($this->format, "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
                                 }
                               if (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType == AVC_SEQUENCE_HEADER))
                                   $this->prevAVC_Header = true;
@@ -1093,17 +1093,17 @@
                               $this->pVideoTagLen = $totalTagLen;
                             }
                           else
-                              DebugLog(sprintf("%s\n" . $this->format, "Skipping small sized video packet", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize), $debug);
+                              LogDebug(sprintf("%s\n" . $this->format, "Skipping small sized video packet", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize), $debug);
                         }
                       else
-                          DebugLog(sprintf("%s\n" . $this->format, "Skipping video packet in fragment $fragNum", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize), $debug);
+                          LogDebug(sprintf("%s\n" . $this->format, "Skipping video packet in fragment $fragNum", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize), $debug);
                       if (!$this->video)
                           $this->video = true;
                       break;
                   case SCRIPT_DATA:
                       break;
                   default:
-                      Quit("Unknown packet type " . $packetType . " encountered! Encrypted fragments can't be recovered.");
+                      LogError("Unknown packet type " . $packetType . " encountered! Encrypted fragments can't be recovered.");
               }
               $fragPos += $totalTagLen;
             }
@@ -1129,7 +1129,7 @@
                   $frag = $this->frags[$this->lastFrag + 1];
                   if ($frag !== false)
                     {
-                      DebugLog("Writing fragment " . $frag['id'] . " to flv file");
+                      LogDebug("Writing fragment " . $frag['id'] . " to flv file");
                       if (!isset($opt['file']))
                         {
                           $opt['debug'] = false;
@@ -1159,7 +1159,7 @@
                       $flvData = $this->DecodeFragment($frag['response'], $frag['id'], $opt);
                       $status  = fwrite($opt['file'], $flvData, strlen($flvData));
                       if (!$status)
-                          Quit("Failed to write flv data");
+                          LogError("Failed to write flv data");
                       if (!$this->play)
                           $this->filesize = ftell($opt['file']) / (1024 * 1024);
                       $this->lastFrag = $frag['id'];
@@ -1167,7 +1167,7 @@
                   else
                     {
                       $this->lastFrag += 1;
-                      DebugLog("Skipping failed fragment " . $this->lastFrag);
+                      LogDebug("Skipping failed fragment " . $this->lastFrag);
                     }
                   unset($this->frags[$this->lastFrag]);
                 }
@@ -1175,7 +1175,7 @@
                   break;
 
               if ($opt['tDuration'] and (($opt['duration'] + $this->duration) >= $opt['tDuration']))
-                  Quit("\nFinished recording " . ($opt['duration'] + $this->duration) . " seconds of content.", 0);
+                  LogError("\nFinished recording " . ($opt['duration'] + $this->duration) . " seconds of content.", 0);
               if ($opt['filesize'] and ($this->filesize >= $opt['filesize']))
                 {
                   $this->filesize = 0;
@@ -1268,13 +1268,6 @@
       $str[$pos + 3] = pack("C", $int & 0xFF);
     }
 
-  function DebugLog($msg, $display = true)
-    {
-      global $debug, $logfile;
-      if ($display and $debug)
-          fwrite($logfile, $msg . "\n");
-    }
-
   function GetString($xmlObject)
     {
       return trim((string) $xmlObject);
@@ -1294,7 +1287,25 @@
       return key($temp);
     }
 
-  function Message($msg, $progress = false)
+  function LogDebug($msg, $display = true)
+    {
+      global $debug, $logfile;
+      if ($display and $debug)
+          fwrite($logfile, $msg . "\n");
+    }
+
+  function LogError($msg, $code = 1)
+    {
+      if (!$GLOBALS['play'])
+        {
+          printf("%s\n", $msg);
+          exit($code);
+        }
+      else
+          exit($code);
+    }
+
+  function LogInfo($msg, $progress = false)
     {
       if (!$GLOBALS['play'])
         {
@@ -1328,17 +1339,6 @@
       return $outPath;
     }
 
-  function Quit($msg, $code = 1)
-    {
-      if (!$GLOBALS['play'])
-        {
-          printf("%s\n", $msg);
-          exit($code);
-        }
-      else
-          exit($code);
-    }
-
   function ShowHeader($header)
     {
       $len    = strlen($header);
@@ -1363,7 +1363,7 @@
       else
           $flv = fopen($outFile, "w+b");
       if (!$flv)
-          Quit("Failed to open " . $outFile);
+          LogError("Failed to open " . $outFile);
       fwrite($flv, $flvHeader, $flvHeaderLen);
       return $flv;
     }
@@ -1430,7 +1430,7 @@
   );
   foreach ($extensions as $extension)
       if (!extension_loaded($extension))
-          Quit("You don't have '$extension' extension installed. please install it before continuing.");
+          LogError("You don't have '$extension' extension installed. please install it before continuing.");
 
   // Initialize classes
   $cc  = new cURL();
@@ -1494,7 +1494,7 @@
           $outDir = $outDir . '/';
       if (!file_exists($outDir))
         {
-          DebugLog("Creating destination directory " . $outDir);
+          LogDebug("Creating destination directory " . $outDir);
           mkdir($outDir, 0777, true);
         }
     }
@@ -1561,13 +1561,13 @@
           break;
       $count++;
     }
-  Message("Found $fragCount fragments");
+  LogInfo("Found $fragCount fragments");
 
   // Process available fragments
   if (!$fragCount)
       exit(1);
   $timeStart = microtime(true);
-  DebugLog("Joining Fragments:");
+  LogDebug("Joining Fragments:");
   for ($i = $fragNum + 1; $i <= $fragNum + $fragCount; $i++)
     {
       $frag = file_get_contents($baseFilename . $i . $fileExt);
@@ -1593,12 +1593,12 @@
           fclose($opt['flv']);
           unset($opt['flv']);
         }
-      Message("Processed " . ($i - $fragNum) . " fragments", true);
+      LogInfo("Processed " . ($i - $fragNum) . " fragments", true);
     }
   fclose($opt['flv']);
   $timeEnd   = microtime(true);
   $timeTaken = sprintf("%.2f", $timeEnd - $timeStart);
-  Message("Joined $fragCount fragments in $timeTaken seconds");
+  LogInfo("Joined $fragCount fragments in $timeTaken seconds");
 
   // Delete cookies and fragments after processing
   if ($delete)
@@ -1610,5 +1610,5 @@
               unlink($baseFilename . $i . $fileExt);
     }
 
-  Message("Finished");
+  LogInfo("Finished");
 ?>
