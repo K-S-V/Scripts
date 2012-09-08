@@ -123,9 +123,7 @@
 
       function cURL($cookies = true, $cookie = 'Cookies.txt', $compression = 'gzip', $proxy = '')
         {
-          $this->headers[]   = 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
-          $this->headers[]   = 'Connection: Keep-Alive';
-          $this->headers[]   = 'Content-Type: application/x-www-form-urlencoded;charset=UTF-8';
+          $this->headers     = $this->headers();
           $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:15.0) Gecko/20100101 Firefox/15.0';
           $this->compression = $compression;
           $this->proxy       = $proxy;
@@ -134,6 +132,14 @@
           $this->cert_check  = true;
           if ($this->cookies == true)
               $this->cookie($cookie);
+        }
+
+      function headers()
+        {
+          $headers[] = 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
+          $headers[] = 'Connection: Keep-Alive';
+          $headers[] = 'Content-Type: application/x-www-form-urlencoded;charset=UTF-8';
+          return $headers;
         }
 
       function cookie($cookie_file)
