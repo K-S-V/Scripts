@@ -18,7 +18,7 @@
               'debug'  => 'show debug output',
               'delete' => 'delete fragments after processing',
               'fproxy' => 'force proxy for downloading of fragments',
-              'play'   => 'dump flv data to stderr for piping to another program',
+              'play'   => 'dump live stream to stdout for piping to media player',
               'rename' => 'rename fragments sequentially before processing'
           ),
           1 => array(
@@ -55,33 +55,24 @@
                       $arg = preg_replace('/^--/', '', $arg);
 
                   if ($doubleParam && $isparam)
-                    {
-                      echo "[param] expected after '$doubleParam' switch (" . self::$ACCEPTED[1][$doubleParam] . ")\n";
-                      exit(1);
-                    }
+                      LogError("[param] expected after '$doubleParam' switch (" . self::$ACCEPTED[1][$doubleParam] . ")");
                   else if (!$doubleParam && !$isparam)
                     {
                       if (isset($GLOBALS['baseFilename']) and (!$GLOBALS['baseFilename']))
                           $GLOBALS['baseFilename'] = $arg;
                       else
-                        {
-                          echo "'$arg' is an invalid switch, use --help to display valid switches.\n";
-                          exit(1);
-                        }
+                          LogError("'$arg' is an invalid switch, use --help to display valid switches.");
                     }
                   else if (!$doubleParam && $isparam)
                     {
                       if (isset($this->params[$arg]))
-                          die("'$arg' switch cannot occur more than once\n");
+                          LogError("'$arg' switch cannot occur more than once");
 
                       $this->params[$arg] = true;
                       if (isset(self::$ACCEPTED[1][$arg]))
                           $doubleParam = $arg;
                       else if (!isset(self::$ACCEPTED[0][$arg]))
-                        {
-                          echo "there's no '$arg' switch, use --help to display all switches.\n";
-                          exit(1);
-                        }
+                          LogError("there's no '$arg' switch, use --help to display all switches.");
                     }
                   else if ($doubleParam && !$isparam)
                     {
@@ -94,7 +85,7 @@
           // Final check
           foreach ($this->params as $k => $v)
               if (isset(self::$ACCEPTED[1][$k]) && $v === true)
-                  die("[param] expected after '$k' switch (" . self::$ACCEPTED[1][$k] . ")\n");
+                  LogError("[param] expected after '$k' switch (" . self::$ACCEPTED[1][$k] . ")");
         }
 
       public function getParam($name)
@@ -107,11 +98,11 @@
 
       public function displayHelp()
         {
-          echo "You can use script with following switches: \n\n";
+          LogInfo("You can use script with following switches: \n");
           foreach (self::$ACCEPTED[0] as $key => $value)
-              printf(" --%-18s%s\n", $key, $value);
+              LogInfo(sprintf(" --%-18s%s", $key, $value));
           foreach (self::$ACCEPTED[1] as $key => $value)
-              printf(" --%-9s%-9s%s\n", $key, " [param]", $value);
+              LogInfo(sprintf(" --%-9s%-9s%s", $key, " [param]", $value));
         }
     }
 
@@ -319,7 +310,7 @@
 
       function error($error)
         {
-          die("cURL Error : $error");
+          LogError("cURL Error : $error");
         }
     }
 
@@ -1134,7 +1125,7 @@
                         {
                           $opt['debug'] = false;
                           if ($this->play)
-                              $outFile = STDERR;
+                              $outFile = STDOUT;
                           else if ($this->outFile)
                             {
                               if ($opt['filesize'])
@@ -1296,7 +1287,13 @@
 
   function LogError($msg, $code = 1)
     {
-      if (!$GLOBALS['play'])
+      global $play, $showHeader;
+      if ($showHeader)
+        {
+          ShowHeader();
+          $showHeader = false;
+        }
+      if (!$play)
         {
           printf("%s\n", $msg);
           exit($code);
@@ -1307,7 +1304,13 @@
 
   function LogInfo($msg, $progress = false)
     {
-      if (!$GLOBALS['play'])
+      global $play, $showHeader;
+      if ($showHeader)
+        {
+          ShowHeader();
+          $showHeader = false;
+        }
+      if (!$play)
         {
           if ($progress)
               printf("%-79s\r", $msg);
@@ -1339,8 +1342,9 @@
       return $outPath;
     }
 
-  function ShowHeader($header)
+  function ShowHeader()
     {
+      $header = "KSV Adobe HDS Downloader";
       $len    = strlen($header);
       $width  = (int) ((80 - $len) / 2) + $len;
       $format = "\n%" . $width . "s\n\n";
@@ -1403,7 +1407,6 @@
     }
 
   // Global code starts here
-  ShowHeader("KSV Adobe HDS Downloader");
   $format       = " %-8s%-16s%-16s%-8s";
   $baseFilename = "";
   $debug        = false;
@@ -1414,6 +1417,7 @@
   $filesize     = 0;
   $fragCount    = 0;
   $fragNum      = 0;
+  $showHeader   = true;
   $logfile      = STDERR;
   $manifest     = "";
   $outDir       = "";
@@ -1421,6 +1425,19 @@
   $play         = false;
   $rename       = false;
   $start        = 0;
+
+  // Check if STDOUT is available
+  $cli = new CLI();
+  if ($cli->getParam('play'))
+    {
+      $play       = true;
+      $showHeader = false;
+    }
+  if ($cli->getParam('help'))
+    {
+      $cli->displayHelp();
+      exit(0);
+    }
 
   // Check for required extensions
   $extensions = array(
@@ -1434,7 +1451,6 @@
 
   // Initialize classes
   $cc  = new cURL();
-  $cli = new CLI();
   $f4f = new F4F();
 
   $f4f->baseFilename =& $baseFilename;
@@ -1446,19 +1462,12 @@
   $f4f->rename =& $rename;
 
   // Process command line options
-  if ($cli->getParam('help'))
-    {
-      $cli->displayHelp();
-      exit(0);
-    }
   if ($cli->getParam('debug'))
       $debug = true;
   if ($cli->getParam('delete'))
       $delete = true;
   if ($cli->getParam('fproxy'))
       $cc->fragProxy = true;
-  if ($cli->getParam('play'))
-      $play = true;
   if ($cli->getParam('rename'))
       $rename = $cli->getParam('rename');
   if ($cli->getParam('auth'))
@@ -1502,12 +1511,9 @@
   if ($outFile and (substr($outFile, -4) == ".flv"))
       $outFile = substr($outFile, 0, -4);
 
-  // Redirect debug output and disable filesize when piping
+  // Disable filesize when piping
   if ($play)
-    {
       $filesize = 0;
-      $logfile  = STDOUT;
-    }
 
   // Download fragments when manifest is available
   if ($manifest)
