@@ -753,10 +753,12 @@
                   /* Increase or decrease segment number if current fragment is not available */
                   /* in selected segment range                                                */
                   if (count($this->segTable) > 1)
+                    {
                       if ($fragNum > ($segNum * $this->fragsPerSeg))
                           $segNum++;
                       else if ($fragNum <= (($segNum - 1) * $this->fragsPerSeg))
                           $segNum--;
+                    }
 
                   LogDebug("Adding fragment $fragNum to download queue");
                   $cc->addDownload($this->fragUrl . "Seg" . $segNum . "-Frag" . $fragNum . $this->auth, $fragNum);
@@ -812,8 +814,10 @@
                             }
                         }
                     }
-                  unset($download);
+                  unset($downloads);
                 }
+              if ($this->live and ($fragNum >= $this->fragCount) and !$cc->active)
+                  $this->UpdateBootstrapInfo($cc, $this->bootstrapUrl);
               usleep(40000);
             }
 
@@ -1174,14 +1178,10 @@
                   fclose($opt['file']);
                   unset($opt['file']);
                 }
-
-              // Update bootstrap info after successful writing of last known fragment
-              if ($this->lastFrag == $this->fragCount)
-                  $this->UpdateBootstrapInfo($opt['cc'], $this->bootstrapUrl);
             }
 
           if (!count($this->frags))
-              $this->frags = array();
+              unset($this->frags);
         }
     }
 
