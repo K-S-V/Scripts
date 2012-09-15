@@ -15,7 +15,7 @@
       );
       var $params = array();
 
-      public function __construct()
+      function __construct()
         {
           global $argc, $argv;
 
@@ -75,7 +75,7 @@
                 }
         }
 
-      public function getParam($name)
+      function getParam($name)
         {
           if (isset($this->params[$name]))
               return $this->params[$name];
@@ -83,7 +83,7 @@
               return "";
         }
 
-      public function displayHelp()
+      function displayHelp()
         {
           echo "You can use script with following switches: \n\n";
           foreach (self::$ACCEPTED[0] as $key => $value)
@@ -256,6 +256,12 @@
           $this->cert_check  = true;
           if ($this->cookies == true)
               $this->cookie($cookie);
+        }
+
+      function __destruct()
+        {
+          if (file_exists($this->cookie_file))
+              unlink($this->cookie_file);
         }
 
       function headers()
@@ -450,8 +456,6 @@
   function Close($message)
     {
       global $cli, $windows;
-      if (file_exists("Cookies.txt"))
-          unlink("Cookies.txt");
       if ($message)
           qecho($message . "\n");
       if ($windows)

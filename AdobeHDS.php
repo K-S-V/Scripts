@@ -38,7 +38,7 @@
       );
       var $params = array();
 
-      public function __construct()
+      function __construct()
         {
           global $argc, $argv;
 
@@ -88,7 +88,7 @@
                   LogError("[param] expected after '$k' switch (" . self::$ACCEPTED[1][$k] . ")");
         }
 
-      public function getParam($name)
+      function getParam($name)
         {
           if (isset($this->params[$name]))
               return $this->params[$name];
@@ -96,7 +96,7 @@
               return "";
         }
 
-      public function displayHelp()
+      function displayHelp()
         {
           LogInfo("You can use script with following switches: \n");
           foreach (self::$ACCEPTED[0] as $key => $value)
@@ -123,6 +123,12 @@
           $this->cert_check  = true;
           if ($this->cookies == true)
               $this->cookie($cookie);
+        }
+
+      function __destruct()
+        {
+          if (file_exists($this->cookie_file))
+              unlink($this->cookie_file);
         }
 
       function headers()
@@ -323,7 +329,7 @@
       var $prevAudioTS, $prevVideoTS, $pAudioTagLen, $pVideoTagLen, $pAudioTagPos, $pVideoTagPos;
       var $prevAVC_Header, $prevAAC_Header, $AVC_HeaderWritten, $AAC_HeaderWritten;
 
-      public function __construct()
+      function __construct()
         {
           $this->auth          = "";
           $this->baseFilename  = "";
@@ -1609,8 +1615,6 @@
   // Delete cookies and fragments after processing
   if ($delete)
     {
-      if (file_exists("Cookies.txt"))
-          unlink("Cookies.txt");
       for ($i = $fragNum + 1; $i <= $fragNum + $fragCount; $i++)
           if (file_exists($baseFilename . $i . $fileExt))
               unlink($baseFilename . $i . $fileExt);
