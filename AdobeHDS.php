@@ -115,7 +115,7 @@
       function cURL($cookies = true, $cookie = 'Cookies.txt', $compression = 'gzip', $proxy = '')
         {
           $this->headers     = $this->headers();
-          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:15.0) Gecko/20100101 Firefox/15.0';
+          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:15.0) Gecko/20100101 Firefox/15.0.1';
           $this->compression = $compression;
           $this->proxy       = $proxy;
           $this->fragProxy   = false;
@@ -783,7 +783,11 @@
                               if ($this->live)
                                   $this->WriteLiveFragment($download, $opt);
                               else
+                                {
+                                  $opt['debug'] = false;
+                                  $this->DecodeFragment($download['response'], $download['id'], $opt);
                                   file_put_contents($this->baseFilename . $download['id'], $download['response']);
+                                }
                             }
                           else
                             {
@@ -1104,7 +1108,7 @@
                   case SCRIPT_DATA:
                       break;
                   default:
-                      LogError("Unknown packet type " . $packetType . " encountered! Encrypted fragments can't be recovered.");
+                      LogError("Unknown packet type " . $packetType . " encountered! Encrypted fragments can't be recovered.", 2);
               }
               $fragPos += $totalTagLen;
             }
@@ -1293,13 +1297,13 @@
 
   function LogError($msg, $code = 1)
     {
-      global $play, $showHeader;
+      global $quiet, $showHeader;
       if ($showHeader)
         {
           ShowHeader();
           $showHeader = false;
         }
-      if (!$play)
+      if (!$quiet)
         {
           printf("%s\n", $msg);
           exit($code);
@@ -1310,13 +1314,13 @@
 
   function LogInfo($msg, $progress = false)
     {
-      global $play, $showHeader;
+      global $quiet, $showHeader;
       if ($showHeader)
         {
           ShowHeader();
           $showHeader = false;
         }
-      if (!$play)
+      if (!$quiet)
         {
           if ($progress)
               printf("%-79s\r", $msg);
@@ -1362,11 +1366,13 @@
       $flvHeader    = pack("H*", "464c5601050000000900000000");
       $flvHeaderLen = strlen($flvHeader);
 
-      if (!$video or !$audio)
-          if ($audio & !$video)
+      if (!($audio and $video))
+        {
+          if ($audio and !$video)
               $flvHeader[4] = "\x04";
-          else if ($video & !$audio)
+          else if ($video and !$audio)
               $flvHeader[4] = "\x01";
+        }
 
       if (is_resource($outFile))
           $flv = $outFile;
@@ -1429,6 +1435,7 @@
   $outDir       = "";
   $outFile      = "";
   $play         = false;
+  $quiet        = false;
   $rename       = false;
   $start        = 0;
 
@@ -1437,6 +1444,7 @@
   if ($cli->getParam('play'))
     {
       $play       = true;
+      $quiet      = true;
       $showHeader = false;
     }
   if ($cli->getParam('help'))
