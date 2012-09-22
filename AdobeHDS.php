@@ -420,7 +420,22 @@
 
           foreach ($manifests as $manifest)
             {
-              $xml     = $manifest['xml'];
+              $xml = $manifest['xml'];
+
+              // Extract baseUrl from manifest url
+              $baseUrl = $xml->xpath("/ns:manifest/ns:baseURL");
+              if (isset($baseUrl[0]))
+                  $baseUrl = GetString($baseUrl[0]);
+              else
+                {
+                  $baseUrl = $manifest['url'];
+                  if (strpos($baseUrl, '?') !== false)
+                      $baseUrl = substr($baseUrl, 0, strpos($baseUrl, '?'));
+                  $baseUrl = substr($baseUrl, 0, strrpos($baseUrl, '/'));
+                }
+              if (!isHttpUrl($baseUrl))
+                  LogError("Provided manifest is not a valid HDS manifest");
+
               $streams = $xml->xpath("/ns:manifest/ns:media");
               foreach ($streams as $stream)
                 {
@@ -430,26 +445,8 @@
                   $streamId = isset($stream[strtolower('streamId')]) ? GetString($stream[strtolower('streamId')]) : "";
                   $mediaEntry =& $this->media[$bitrate];
 
-                  // Extract baseUrl from manifest url
-                  $baseUrl = $xml->xpath("/ns:manifest/ns:baseURL");
-                  if (isset($baseUrl[0]))
-                      $baseUrl = GetString($baseUrl[0]);
-                  else
-                    {
-                      $baseUrl = $manifest['url'];
-                      if (strpos($baseUrl, '?') !== false)
-                        {
-                          $baseUrl = substr($baseUrl, 0, strpos($baseUrl, '?'));
-                          $baseUrl = substr($baseUrl, 0, strrpos($baseUrl, '/'));
-                        }
-                      else
-                          $baseUrl = substr($baseUrl, 0, strrpos($baseUrl, '/'));
-                    }
-                  if (!isHttpUrl($baseUrl))
-                      LogError("Provided manifest is not a valid HDS manifest");
                   $mediaEntry['baseUrl'] = $baseUrl;
-
-                  $mediaEntry['url'] = GetString($stream['url']);
+                  $mediaEntry['url']     = GetString($stream['url']);
                   if (isset($stream[strtolower('bootstrapInfoId')]))
                       $bootstrap = $xml->xpath("/ns:manifest/ns:bootstrapInfo[@id='" . $stream[strtolower('bootstrapInfoId')] . "']");
                   else
@@ -623,6 +620,7 @@
             }
           LogDebug("");
           $lastSegment     = end($this->segTable);
+          $this->segNum    = $lastSegment['firstSegment'];
           $this->fragCount = $lastSegment['fragmentsPerSegment'];
 
           // Use segment table in case of multiple segments
@@ -733,6 +731,7 @@
           else
               $this->fragUrl = $this->baseUrl . "/" . $this->media['url'];
           $this->fragUrl = NormalizePath($this->fragUrl);
+          LogDebug("Base Fragment Url:\n" . $this->fragUrl . "\n");
           LogDebug("Downloading Fragments:\n");
 
           while (($fragNum < $this->fragCount) or $cc->active)
@@ -773,8 +772,9 @@
               $downloads = $cc->checkDownloads();
               if ($downloads !== false)
                 {
-                  foreach ($downloads as $download)
+                  for ($i = 0; $i < count($downloads); $i++)
                     {
+                      $download = $downloads[$i];
                       if ($download['status'] == 200)
                         {
                           if ($this->VerifyFragment($download['response']))
@@ -814,7 +814,7 @@
                           /* Resync with latest available fragment when we are left behind due to */
                           /* slow connection and short live window on streaming server. make sure */
                           /* to reset the last written fragment.                                  */
-                          if ($this->live and !$cc->active)
+                          if ($this->live and ($i + 1 == count($downloads)) and !$cc->active)
                             {
                               LogDebug("Trying to resync with latest available fragment");
                               $this->UpdateBootstrapInfo($cc, $this->bootstrapUrl);
@@ -824,7 +824,7 @@
                             }
                         }
                     }
-                  unset($downloads);
+                  unset($downloads, $download);
                 }
               if ($this->live and ($fragNum >= $this->fragCount) and !$cc->active)
                   $this->UpdateBootstrapInfo($cc, $this->bootstrapUrl);
@@ -1233,7 +1233,7 @@
 
   function ReadBoxHeader($str, &$pos, &$boxType, &$boxSize)
     {
-      if (!$pos)
+      if (!isset($pos))
           $pos = 0;
       $boxSize = ReadInt32($str, $pos);
       $boxType = substr($str, $pos + 4, 4);
@@ -1620,7 +1620,7 @@
   $timeTaken = sprintf("%.2f", $timeEnd - $timeStart);
   LogInfo("Joined $fragCount fragments in $timeTaken seconds");
 
-  // Delete cookies and fragments after processing
+  // Delete fragments after processing
   if ($delete)
     {
       for ($i = $fragNum + 1; $i <= $fragNum + $fragCount; $i++)
