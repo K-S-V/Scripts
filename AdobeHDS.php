@@ -32,6 +32,7 @@
               'parallel'  => 'number of fragments to download simultaneously',
               'proxy'     => 'proxy for downloading of manifest',
               'quality'   => 'selected quality level (low|medium|high) or exact bitrate',
+              'referrer'  => 'Referer to use for emulation of browser requests',
               'start'     => 'start from specified fragment',
               'useragent' => 'User-Agent to use for emulation of browser requests'
           )
@@ -1436,6 +1437,7 @@
   $outFile      = "";
   $play         = false;
   $quiet        = false;
+  $referrer     = "";
   $rename       = false;
   $start        = 0;
 
@@ -1504,10 +1506,16 @@
       $cc->proxy = $cli->getParam('proxy');
   if ($cli->getParam('quality'))
       $f4f->quality = $cli->getParam('quality');
+  if ($cli->getParam('referrer'))
+      $referrer = $cli->getParam('referrer');
   if ($cli->getParam('start'))
       $start = $cli->getParam('start');
   if ($cli->getParam('useragent'))
       $cc->user_agent = $cli->getParam('useragent');
+
+  // Use custom referrer
+  if ($referrer)
+      $cc->headers[] = "Referer: " . $referrer;
 
   // Create output directory
   if ($outDir)
