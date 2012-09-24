@@ -19,7 +19,8 @@
               'delete' => 'delete fragments after processing',
               'fproxy' => 'force proxy for downloading of fragments',
               'play'   => 'dump live stream to stdout for piping to media player',
-              'rename' => 'rename fragments sequentially before processing'
+              'rename' => 'rename fragments sequentially before processing',
+              'update' => 'update the script to current git version'
           ),
           1 => array(
               'auth'      => 'authentication string for fragment requests',
@@ -1430,7 +1431,6 @@
   $filesize     = 0;
   $fragCount    = 0;
   $fragNum      = 0;
-  $showHeader   = true;
   $logfile      = STDERR;
   $manifest     = "";
   $outDir       = "";
@@ -1439,7 +1439,9 @@
   $quiet        = false;
   $referrer     = "";
   $rename       = false;
+  $showHeader   = true;
   $start        = 0;
+  $update       = false;
 
   // Check if STDOUT is available
   $cli = new CLI();
@@ -1486,6 +1488,8 @@
       $cc->fragProxy = true;
   if ($cli->getParam('rename'))
       $rename = $cli->getParam('rename');
+  if ($cli->getParam('update'))
+      $update = true;
   if ($cli->getParam('auth'))
       $f4f->auth = "?" . $cli->getParam('auth');
   if ($cli->getParam('duration'))
@@ -1516,6 +1520,20 @@
   // Use custom referrer
   if ($referrer)
       $cc->headers[] = "Referer: " . $referrer;
+
+  // Update the script
+  if ($update)
+    {
+      $cc->cert_check = false;
+      $status         = $cc->get("https://raw.github.com/K-S-V/Scripts/master/AdobeHDS.php");
+      if ($status == 200)
+        {
+          file_put_contents($argv[0], $cc->response);
+          LogError("Script updated successfully", 0);
+        }
+      else
+          LogError("Failed to update script");
+    }
 
   // Create output directory
   if ($outDir)
