@@ -9,6 +9,7 @@
   define('AAC_SEQUENCE_HEADER', 0x00);
   define('AVC_SEQUENCE_END', 0x02);
   define('FRAMEGAP_DURATION', 8);
+  define('INVALID_TIMESTAMP', -1);
 
   class CLI
     {
@@ -173,8 +174,8 @@
   $video             = false;
   $prevTagSize       = 4;
   $tagHeaderLen      = 11;
-  $prevAudioTS       = 0;
-  $prevVideoTS       = 0;
+  $prevAudioTS       = INVALID_TIMESTAMP;
+  $prevVideoTS       = INVALID_TIMESTAMP;
   $pAudioTagLen      = 0;
   $pVideoTagLen      = 0;
   $pAudioTagPos      = 0;
@@ -278,7 +279,7 @@
                     {
                       // Check for packets with non-monotonic audio timestamps and fix them
                       if (!(($CodecID == CODEC_ID_AAC) and (($AAC_PacketType == AAC_SEQUENCE_HEADER) or $prevAAC_Header)))
-                          if (($packetTS > 0) and ($packetTS <= $prevAudioTS))
+                          if (($prevAudioTS != INVALID_TIMESTAMP) and ($packetTS <= $prevAudioTS))
                             {
                               DebugLog(sprintf("%s\n" . $format, "Fixing audio timestamp", "AUDIO", $packetTS, $prevAudioTS, $packetSize));
                               $packetTS += FRAMEGAP_DURATION + ($prevAudioTS - $packetTS);
@@ -340,7 +341,7 @@
                     {
                       // Check for packets with non-monotonic video timestamps and fix them
                       if (!(($CodecID == CODEC_ID_AVC) and (($AVC_PacketType == AVC_SEQUENCE_HEADER) or ($AVC_PacketType == AVC_SEQUENCE_END) or $prevAVC_Header)))
-                          if (($packetTS > 0) and ($packetTS <= $prevVideoTS))
+                          if (($prevVideoTS != INVALID_TIMESTAMP) and ($packetTS <= $prevVideoTS))
                             {
                               DebugLog(sprintf("%s\n" . $format, "Fixing video timestamp", "VIDEO", $packetTS, $prevVideoTS, $packetSize));
                               $packetTS += FRAMEGAP_DURATION + ($prevVideoTS - $packetTS);

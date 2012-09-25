@@ -9,6 +9,7 @@
   define('AAC_SEQUENCE_HEADER', 0x00);
   define('AVC_SEQUENCE_END', 0x02);
   define('FRAMEGAP_DURATION', 8);
+  define('INVALID_TIMESTAMP', -1);
 
   class CLI
     {
@@ -365,8 +366,8 @@
           $this->video             = false;
           $this->prevTagSize       = 4;
           $this->tagHeaderLen      = 11;
-          $this->prevAudioTS       = 0;
-          $this->prevVideoTS       = 0;
+          $this->prevAudioTS       = INVALID_TIMESTAMP;
+          $this->prevVideoTS       = INVALID_TIMESTAMP;
           $this->pAudioTagLen      = 0;
           $this->pVideoTagLen      = 0;
           $this->pAudioTagPos      = 0;
@@ -998,7 +999,7 @@
                             {
                               // Check for packets with non-monotonic audio timestamps and fix them
                               if (!(($CodecID == CODEC_ID_AAC) and (($AAC_PacketType == AAC_SEQUENCE_HEADER) or $this->prevAAC_Header)))
-                                  if (($packetTS > 0) and ($packetTS <= $this->prevAudioTS))
+                                  if (($this->prevAudioTS != INVALID_TIMESTAMP) and ($packetTS <= $this->prevAudioTS))
                                     {
                                       LogDebug(sprintf("%s\n" . $this->format, "Fixing audio timestamp", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize), $debug);
                                       $packetTS += FRAMEGAP_DURATION + ($this->prevAudioTS - $packetTS);
@@ -1071,7 +1072,7 @@
                             {
                               // Check for packets with non-monotonic video timestamps and fix them
                               if (!(($CodecID == CODEC_ID_AVC) and (($AVC_PacketType == AVC_SEQUENCE_HEADER) or ($AVC_PacketType == AVC_SEQUENCE_END) or $this->prevAVC_Header)))
-                                  if (($packetTS > 0) and ($packetTS <= $this->prevVideoTS))
+                                  if (($this->prevVideoTS != INVALID_TIMESTAMP) and ($packetTS <= $this->prevVideoTS))
                                     {
                                       LogDebug(sprintf("%s\n" . $this->format, "Fixing video timestamp", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize), $debug);
                                       $packetTS += FRAMEGAP_DURATION + ($this->prevVideoTS - $packetTS);
