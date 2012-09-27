@@ -492,7 +492,10 @@
 
           // Quality selection
           if (is_numeric($this->quality) and isset($this->media[$this->quality]))
-              $this->media = $this->media[$this->quality];
+            {
+              $key         = $this->quality;
+              $this->media = $this->media[$key];
+            }
           else
             {
               $this->quality = strtolower($this->quality);
