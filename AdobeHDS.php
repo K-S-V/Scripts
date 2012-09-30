@@ -19,13 +19,13 @@
               'debug'  => 'show debug output',
               'delete' => 'delete fragments after processing',
               'fproxy' => 'force proxy for downloading of fragments',
-              'play'   => 'dump live stream to stdout for piping to media player',
+              'play'   => 'dump stream to stdout for piping to media player',
               'rename' => 'rename fragments sequentially before processing',
               'update' => 'update the script to current git version'
           ),
           1 => array(
               'auth'      => 'authentication string for fragment requests',
-              'duration'  => 'stop live recording after specified number of seconds',
+              'duration'  => 'stop recording after specified number of seconds',
               'filesize'  => 'split output file in chunks of specified size (MB)',
               'fragments' => 'base filename for fragments',
               'manifest'  => 'manifest file for downloading of fragments',
@@ -315,6 +315,15 @@
         {
           if (isset($this->mh))
             {
+              if (isset($this->ch))
+                {
+                  foreach ($this->ch as $download)
+                    {
+                      curl_multi_remove_handle($this->mh, $download['ch']);
+                      curl_close($download['ch']);
+                    }
+                  unset($this->ch);
+                }
               curl_multi_close($this->mh);
               unset($this->mh);
             }
@@ -385,9 +394,9 @@
         {
           $status = $cc->get($manifest);
           if ($status == 403)
-              LogError("Access Denied! Unable to download manifest.");
+              LogError("Access Denied! Unable to download the manifest.");
           else if ($status != 200)
-              LogError("Unable to download manifest");
+              LogError("Unable to download the manifest");
           $xml = simplexml_load_string(trim($cc->response));
           if (!$xml)
               LogError("Failed to load xml");
@@ -402,11 +411,8 @@
           LogInfo("Processing manifest info....");
           $xml     = $this->GetManifest($cc, $manifest);
           $baseUrl = $xml->xpath("/ns:manifest/ns:baseURL");
-          if (isset($baseUrl[0]))
-              $baseUrl = GetString($baseUrl[0]);
-          else
-              $baseUrl = "";
-          $url = $xml->xpath("/ns:manifest/ns:media[@*]");
+          $baseUrl = isset($baseUrl[0]) ? GetString($baseUrl[0]) : "";
+          $url     = $xml->xpath("/ns:manifest/ns:media[@*]");
           if (isset($url[0]['href']))
             {
               foreach ($url as $manifest)
@@ -445,14 +451,18 @@
               $streams = $xml->xpath("/ns:manifest/ns:media");
               foreach ($streams as $stream)
                 {
-                  $stream   = (array) $stream;
-                  $stream   = array_change_key_case($stream['@attributes']);
+                  $array = array();
+                  foreach ($stream->attributes() as $k => $v)
+                      $array[strtolower($k)] = GetString($v);
+                  $array['metadata'] = GetString($stream->{'metadata'});
+                  $stream            = $array;
+
                   $bitrate  = isset($stream['bitrate']) ? (int) $stream['bitrate'] : $manifest['bitrate'];
-                  $streamId = isset($stream[strtolower('streamId')]) ? GetString($stream[strtolower('streamId')]) : "";
+                  $streamId = isset($stream[strtolower('streamId')]) ? $stream[strtolower('streamId')] : "";
                   $mediaEntry =& $this->media[$bitrate];
 
                   $mediaEntry['baseUrl'] = $baseUrl;
-                  $mediaEntry['url']     = GetString($stream['url']);
+                  $mediaEntry['url']     = $stream['url'];
                   if (isset($stream[strtolower('bootstrapInfoId')]))
                       $bootstrap = $xml->xpath("/ns:manifest/ns:bootstrapInfo[@id='" . $stream[strtolower('bootstrapInfoId')] . "']");
                   else
@@ -469,9 +479,8 @@
                     }
                   else
                       $mediaEntry['bootstrap'] = base64_decode(GetString($bootstrap[0]));
-                  $metadata = $xml->xpath("/ns:manifest/ns:media[@url='" . $mediaEntry['url'] . "']/ns:metadata");
-                  if (isset($metadata[0]))
-                      $mediaEntry['metadata'] = base64_decode(GetString($metadata[0]));
+                  if (isset($stream['metadata']))
+                      $mediaEntry['metadata'] = base64_decode($stream['metadata']);
                   else
                       $mediaEntry['metadata'] = "";
                 }
@@ -753,14 +762,16 @@
                       $this->discontinuity = value_in_array_field($fragNum, "firstFragment", "discontinuityIndicator", $this->fragTable, true);
                   if (($this->discontinuity == 1) or ($this->discontinuity == 3))
                     {
-                      if ($this->live)
-                          $this->frags[$download['id']] = false;
-                      $this->rename = true;
+                      $this->frags[$download['id']] = false;
+                      $this->rename                 = true;
                       continue;
                     }
                   if (file_exists($this->baseFilename . $fragNum))
                     {
                       LogDebug("Fragment $fragNum is already downloaded");
+                      $download['id']       = $fragNum;
+                      $download['response'] = file_get_contents($this->baseFilename . $fragNum);
+                      $this->WriteFragment($download, $opt);
                       continue;
                     }
 
@@ -789,14 +800,9 @@
                           if ($this->VerifyFragment($download['response']))
                             {
                               LogDebug("Fragment " . $this->baseFilename . $download['id'] . " successfully downloaded");
-                              if ($this->live)
-                                  $this->WriteLiveFragment($download, $opt);
-                              else
-                                {
-                                  $opt['debug'] = false;
-                                  $this->DecodeFragment($download['response'], $download['id'], $opt);
+                              if (!$this->live)
                                   file_put_contents($this->baseFilename . $download['id'], $download['response']);
-                                }
+                              $this->WriteFragment($download, $opt);
                             }
                           else
                             {
@@ -816,9 +822,8 @@
                       else
                         {
                           LogDebug("Fragment " . $download['id'] . " doesn't exist, Status: " . $download['status']);
-                          if ($this->live)
-                              $this->frags[$download['id']] = false;
-                          $this->rename = true;
+                          $this->frags[$download['id']] = false;
+                          $this->rename                 = true;
 
                           /* Resync with latest available fragment when we are left behind due to */
                           /* slow connection and short live window on streaming server. make sure */
@@ -1131,7 +1136,7 @@
               return $flvData;
         }
 
-      function WriteLiveFragment($download, &$opt)
+      function WriteFragment($download, &$opt)
         {
           $this->frags[$download['id']] = $download;
 
@@ -1166,6 +1171,8 @@
                           $this->InitDecoder();
                           $this->DecodeFragment($frag['response'], $frag['id'], $opt);
                           $opt['file'] = WriteFlvFile($outFile, $this->audio, $this->video);
+                          if (!($this->live or ($this->fragNum > 0) or $this->filesize or $opt['tDuration']))
+                              $this->WriteMetadata($opt['file']);
 
                           $opt['debug'] = $this->debug;
                           $this->InitDecoder();
@@ -1189,7 +1196,10 @@
                   break;
 
               if ($opt['tDuration'] and (($opt['duration'] + $this->duration) >= $opt['tDuration']))
+                {
+                  $opt['cc']->stopDownloads();
                   LogError("\nFinished recording " . ($opt['duration'] + $this->duration) . " seconds of content.", 0);
+                }
               if ($opt['filesize'] and ($this->filesize >= $opt['filesize']))
                 {
                   $this->filesize = 0;
@@ -1314,6 +1324,7 @@
         }
       if (!$quiet)
         {
+          printf("%-79s\r", "");
           printf("%s\n", $msg);
           exit($code);
         }
@@ -1334,7 +1345,10 @@
           if ($progress)
               printf("%-79s\r", $msg);
           else
+            {
+              printf("%-79s\r", "");
               printf("%s\n", $msg);
+            }
         }
     }
 
@@ -1633,7 +1647,7 @@
               $opt['flv'] = WriteFlvFile($outDir . $outFile . "-" . $fileCount++ . ".flv", $f4f->audio, $f4f->video);
           else
               $opt['flv'] = WriteFlvFile($outDir . $outFile . ".flv", $f4f->audio, $f4f->video);
-          if (!($fragNum > 0) and !$filesize)
+          if (!(($fragNum > 0) or $filesize))
               $f4f->WriteMetadata($opt['flv']);
 
           $opt['debug'] = $debug;
