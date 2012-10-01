@@ -1324,7 +1324,8 @@
         }
       if (!$quiet)
         {
-          printf("%-79s\r", "");
+          if ($msg)
+              printf("%-79s\r", "");
           printf("%s\n", $msg);
           exit($code);
         }
@@ -1346,7 +1347,8 @@
               printf("%-79s\r", $msg);
           else
             {
-              printf("%-79s\r", "");
+              if ($msg)
+                  printf("%-79s\r", "");
               printf("%s\n", $msg);
             }
         }
@@ -1549,8 +1551,12 @@
       $status         = $cc->get("https://raw.github.com/K-S-V/Scripts/master/AdobeHDS.php");
       if ($status == 200)
         {
-          file_put_contents($argv[0], $cc->response);
-          LogError("Script updated successfully", 0);
+          if (md5($cc->response) == md5(file_get_contents($argv[0])))
+              LogError("You are already using the latest version of this script.", 0);
+          $status = file_put_contents($argv[0], $cc->response);
+          if (!$status)
+              LogError("Failed to write script file");
+          LogError("Script has been updated successfully.", 0);
         }
       else
           LogError("Failed to update script");
