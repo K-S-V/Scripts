@@ -130,6 +130,7 @@
 
       function __destruct()
         {
+          $this->stopDownloads();
           if (file_exists($this->cookie_file))
               unlink($this->cookie_file);
         }
@@ -1196,10 +1197,7 @@
                   break;
 
               if ($opt['tDuration'] and (($opt['duration'] + $this->duration) >= $opt['tDuration']))
-                {
-                  $opt['cc']->stopDownloads();
                   LogError("\nFinished recording " . ($opt['duration'] + $this->duration) . " seconds of content.", 0);
-                }
               if ($opt['filesize'] and ($this->filesize >= $opt['filesize']))
                 {
                   $this->filesize = 0;
