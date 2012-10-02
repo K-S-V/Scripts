@@ -1179,11 +1179,14 @@
                           $this->InitDecoder();
                         }
                       $flvData = $this->DecodeFragment($frag['response'], $frag['id'], $opt);
-                      $status  = fwrite($opt['file'], $flvData, strlen($flvData));
-                      if (!$status)
-                          LogError("Failed to write flv data");
-                      if (!$this->play)
-                          $this->filesize = ftell($opt['file']) / (1024 * 1024);
+                      if (strlen($flvData))
+                        {
+                          $status = fwrite($opt['file'], $flvData, strlen($flvData));
+                          if (!$status)
+                              LogError("Failed to write flv data");
+                          if (!$this->play)
+                              $this->filesize = ftell($opt['file']) / (1024 * 1024);
+                        }
                       $this->lastFrag = $frag['id'];
                     }
                   else
@@ -1197,7 +1200,10 @@
                   break;
 
               if ($opt['tDuration'] and (($opt['duration'] + $this->duration) >= $opt['tDuration']))
-                  LogError("\nFinished recording " . ($opt['duration'] + $this->duration) . " seconds of content.", 0);
+                {
+                  LogInfo("");
+                  LogError("Finished recording " . ($opt['duration'] + $this->duration) . " seconds of content.", 0);
+                }
               if ($opt['filesize'] and ($this->filesize >= $opt['filesize']))
                 {
                   $this->filesize = 0;
