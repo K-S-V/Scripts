@@ -114,25 +114,28 @@
       var $headers, $user_agent, $compression, $cookie_file;
       var $active, $cert_check, $fragProxy, $proxy, $response;
       var $mh, $ch, $mrc;
+      static $ref = 0;
 
       function cURL($cookies = true, $cookie = 'Cookies.txt', $compression = 'gzip', $proxy = '')
         {
           $this->headers     = $this->headers();
           $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:15.0) Gecko/20100101 Firefox/15.0.1';
           $this->compression = $compression;
-          $this->proxy       = $proxy;
-          $this->fragProxy   = false;
           $this->cookies     = $cookies;
-          $this->cert_check  = true;
           if ($this->cookies == true)
               $this->cookie($cookie);
+          $this->cert_check = true;
+          $this->fragProxy  = false;
+          $this->proxy      = $proxy;
+          self::$ref++;
         }
 
       function __destruct()
         {
           $this->stopDownloads();
-          if (file_exists($this->cookie_file))
+          if ((self::$ref <= 1) and file_exists($this->cookie_file))
               unlink($this->cookie_file);
+          self::$ref--;
         }
 
       function headers()
@@ -1313,7 +1316,12 @@
 
   function LogDebug($msg, $display = true)
     {
-      global $debug, $logfile;
+      global $debug, $logfile, $showHeader;
+      if ($showHeader)
+        {
+          ShowHeader();
+          $showHeader = false;
+        }
       if ($display and $debug)
           fwrite($logfile, $msg . "\n");
     }
@@ -1575,7 +1583,8 @@
       if (!file_exists($outDir))
         {
           LogDebug("Creating destination directory " . $outDir);
-          mkdir($outDir, 0777, true);
+          if (!mkdir($outDir, 0777, true))
+              LogError("Failed to create destination directory " . $outDir);
         }
     }
 
