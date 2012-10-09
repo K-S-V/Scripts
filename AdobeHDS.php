@@ -736,14 +736,17 @@
           $opt['duration'] = 0;
 
           // Extract baseFilename
-          if (substr($this->media['url'], -1) == '/')
-              $this->baseFilename = substr($this->media['url'], 0, -1);
-          else
-              $this->baseFilename = $this->media['url'];
+          $this->baseFilename = $this->media['url'];
+          if (substr($this->baseFilename, -1) == '/')
+              $this->baseFilename = substr($this->baseFilename, 0, -1);
+          $this->baseFilename = RemoveExtension($this->baseFilename);
           if (strrpos($this->baseFilename, '/'))
-              $this->baseFilename = substr($this->baseFilename, strrpos($this->baseFilename, '/') + 1) . "Seg" . $segNum . "-Frag";
+              $this->baseFilename = substr($this->baseFilename, strrpos($this->baseFilename, '/') + 1);
+          if (strpos($manifest, "?"))
+              $this->baseFilename = md5(substr($manifest, 0, strpos($manifest, "?"))) . "_" . $this->baseFilename;
           else
-              $this->baseFilename .= "Seg" . $segNum . "-Frag";
+              $this->baseFilename = md5($manifest) . "_" . $this->baseFilename;
+          $this->baseFilename .= "Seg" . $segNum . "-Frag";
 
           if ($fragNum >= $this->fragCount)
               LogError("No fragment available for downloading");
@@ -1389,6 +1392,18 @@
       return $outPath;
     }
 
+  function RemoveExtension($outFile)
+    {
+      preg_match("/\.\w{1,3}$/i", $outFile, $extension);
+      if (isset($extension[0]))
+        {
+          $extension = $extension[0];
+          $outFile   = substr($outFile, 0, -strlen($extension));
+          return $outFile;
+        }
+      return $outFile;
+    }
+
   function ShowHeader()
     {
       $header = "KSV Adobe HDS Downloader";
@@ -1588,8 +1603,9 @@
         }
     }
 
-  if ($outFile and (substr($outFile, -4) == ".flv"))
-      $outFile = substr($outFile, 0, -4);
+  // Remove existing file extension
+  if ($outFile)
+      $outFile = RemoveExtension($outFile);
 
   // Disable filesize when piping
   if ($play)
@@ -1612,7 +1628,7 @@
   if (!$outFile)
     {
       $baseFilename = str_replace('\\', '/', $baseFilename);
-      if ($baseFilename and (substr($baseFilename, -1) != '/') and (substr($baseFilename, -1) != ':'))
+      if ($baseFilename and !((substr($baseFilename, -1) == '/') or (substr($baseFilename, -1) == ':')))
         {
           if (strrpos($baseFilename, '/'))
               $outFile = substr($baseFilename, strrpos($baseFilename, '/') + 1);
@@ -1621,6 +1637,7 @@
         }
       else
           $outFile = "Joined";
+      $outFile = RemoveExtension($outFile);
     }
 
   // Check for available fragments and rename if required
