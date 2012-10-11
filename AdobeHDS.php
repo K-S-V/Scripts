@@ -796,7 +796,9 @@
                   $cc->addDownload($this->fragUrl . "Seg" . $segNum . "-Frag" . $fragNum . $this->auth, $fragNum);
                 }
 
-              $downloads = $cc->checkDownloads();
+              $downloads = false;
+              if (curl_multi_select($cc->mh) != -1)
+                  $downloads = $cc->checkDownloads();
               if ($downloads !== false)
                 {
                   for ($i = 0; $i < count($downloads); $i++)
@@ -849,7 +851,6 @@
                 }
               if ($this->live and ($fragNum >= $this->fragCount) and !$cc->active)
                   $this->UpdateBootstrapInfo($cc, $this->bootstrapUrl);
-              usleep(40000);
             }
 
           LogInfo("");
