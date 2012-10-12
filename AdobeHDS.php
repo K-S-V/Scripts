@@ -342,7 +342,7 @@
   class F4F
     {
       var $audio, $auth, $baseFilename, $baseTS, $bootstrapUrl, $baseUrl, $debug, $duration, $fileCount, $filesize;
-      var $format, $live, $media, $outDir, $outFile, $parallel, $play, $quality, $rename, $video;
+      var $format, $live, $media, $outDir, $outFile, $parallel, $play, $processed, $quality, $rename, $video;
       var $prevTagSize, $tagHeaderLen;
       var $segTable, $fragTable, $segNum, $fragNum, $frags, $fragCount, $fragsPerSeg, $lastFrag, $fragUrl, $discontinuity;
       var $prevAudioTS, $prevVideoTS, $pAudioTagLen, $pVideoTagLen, $pAudioTagPos, $pVideoTagPos;
@@ -362,6 +362,7 @@
           $this->outFile       = "";
           $this->parallel      = 8;
           $this->play          = false;
+          $this->processed     = false;
           $this->quality       = "high";
           $this->rename        = false;
           $this->segNum        = 1;
@@ -856,6 +857,7 @@
           LogInfo("");
           LogDebug("\nAll fragments downloaded successfully\n");
           $cc->stopDownloads();
+          $this->processed = true;
         }
 
       function VerifyFragment($frag)
@@ -1667,42 +1669,45 @@
     }
   LogInfo("Found $fragCount fragments");
 
-  // Process available fragments
-  if (!$fragCount)
-      exit(1);
-  $timeStart = microtime(true);
-  LogDebug("Joining Fragments:");
-  for ($i = $fragNum + 1; $i <= $fragNum + $fragCount; $i++)
+  if (!$f4f->processed)
     {
-      $frag = file_get_contents($baseFilename . $i . $fileExt);
-      if (!isset($opt['flv']))
+      // Process available fragments
+      if (!$fragCount)
+          exit(1);
+      $timeStart = microtime(true);
+      LogDebug("Joining Fragments:");
+      for ($i = $fragNum + 1; $i <= $fragNum + $fragCount; $i++)
         {
-          $opt['debug'] = false;
-          $f4f->InitDecoder();
-          $f4f->DecodeFragment($frag, $i, $opt);
-          if ($filesize)
-              $opt['flv'] = WriteFlvFile($outDir . $outFile . "-" . $fileCount++ . ".flv", $f4f->audio, $f4f->video);
-          else
-              $opt['flv'] = WriteFlvFile($outDir . $outFile . ".flv", $f4f->audio, $f4f->video);
-          if (!(($fragNum > 0) or $filesize))
-              $f4f->WriteMetadata($opt['flv']);
+          $frag = file_get_contents($baseFilename . $i . $fileExt);
+          if (!isset($opt['flv']))
+            {
+              $opt['debug'] = false;
+              $f4f->InitDecoder();
+              $f4f->DecodeFragment($frag, $i, $opt);
+              if ($filesize)
+                  $opt['flv'] = WriteFlvFile($outDir . $outFile . "-" . $fileCount++ . ".flv", $f4f->audio, $f4f->video);
+              else
+                  $opt['flv'] = WriteFlvFile($outDir . $outFile . ".flv", $f4f->audio, $f4f->video);
+              if (!(($fragNum > 0) or $filesize))
+                  $f4f->WriteMetadata($opt['flv']);
 
-          $opt['debug'] = $debug;
-          $f4f->InitDecoder();
+              $opt['debug'] = $debug;
+              $f4f->InitDecoder();
+            }
+          $f4f->DecodeFragment($frag, $i, $opt);
+          if ($filesize and ($f4f->filesize >= $filesize))
+            {
+              $f4f->filesize = 0;
+              fclose($opt['flv']);
+              unset($opt['flv']);
+            }
+          LogInfo("Processed " . ($i - $fragNum) . " fragments", true);
         }
-      $f4f->DecodeFragment($frag, $i, $opt);
-      if ($filesize and ($f4f->filesize >= $filesize))
-        {
-          $f4f->filesize = 0;
-          fclose($opt['flv']);
-          unset($opt['flv']);
-        }
-      LogInfo("Processed " . ($i - $fragNum) . " fragments", true);
+      fclose($opt['flv']);
+      $timeEnd   = microtime(true);
+      $timeTaken = sprintf("%.2f", $timeEnd - $timeStart);
+      LogInfo("Joined $fragCount fragments in $timeTaken seconds");
     }
-  fclose($opt['flv']);
-  $timeEnd   = microtime(true);
-  $timeTaken = sprintf("%.2f", $timeEnd - $timeStart);
-  LogInfo("Joined $fragCount fragments in $timeTaken seconds");
 
   // Delete fragments after processing
   if ($delete)
