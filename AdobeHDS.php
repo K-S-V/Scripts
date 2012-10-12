@@ -275,6 +275,7 @@
         {
           if (isset($this->mh))
             {
+              curl_multi_select($this->mh);
               $this->mrc = curl_multi_exec($this->mh, $this->active);
               if ($this->mrc != CURLM_OK)
                   return false;
@@ -797,9 +798,7 @@
                   $cc->addDownload($this->fragUrl . "Seg" . $segNum . "-Frag" . $fragNum . $this->auth, $fragNum);
                 }
 
-              $downloads = false;
-              if (curl_multi_select($cc->mh) != -1)
-                  $downloads = $cc->checkDownloads();
+              $downloads = $cc->checkDownloads();
               if ($downloads !== false)
                 {
                   for ($i = 0; $i < count($downloads); $i++)
