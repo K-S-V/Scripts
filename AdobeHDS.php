@@ -1333,42 +1333,17 @@
 
   function LogError($msg, $code = 1)
     {
-      global $quiet, $showHeader;
-      if ($showHeader)
-        {
-          ShowHeader();
-          $showHeader = false;
-        }
+      global $quiet;
       if (!$quiet)
-        {
-          if ($msg)
-              printf("%-79s\r", "");
-          printf("%s\n", $msg);
-          exit($code);
-        }
-      else
-          exit($code);
+          PrintLine($msg);
+      exit($code);
     }
 
   function LogInfo($msg, $progress = false)
     {
-      global $quiet, $showHeader;
-      if ($showHeader)
-        {
-          ShowHeader();
-          $showHeader = false;
-        }
+      global $quiet;
       if (!$quiet)
-        {
-          if ($progress)
-              printf("%-79s\r", $msg);
-          else
-            {
-              if ($msg)
-                  printf("%-79s\r", "");
-              printf("%s\n", $msg);
-            }
-        }
+          PrintLine($msg, $progress);
     }
 
   function NormalizePath($path)
@@ -1394,9 +1369,31 @@
       return $outPath;
     }
 
+  function PrintLine($msg, $progress = false)
+    {
+      global $showHeader;
+      if ($showHeader)
+        {
+          ShowHeader();
+          $showHeader = false;
+        }
+      if ($msg)
+        {
+          printf("\r");
+          printf("%-79s", "");
+          printf("\r");
+          if ($progress)
+              printf("%s\r", $msg);
+          else
+              printf("%s\n", $msg);
+        }
+      else
+          printf("\n");
+    }
+
   function RemoveExtension($outFile)
     {
-      preg_match("/\.\w{1,3}$/i", $outFile, $extension);
+      preg_match("/\.\w{1,4}$/i", $outFile, $extension);
       if (isset($extension[0]))
         {
           $extension = $extension[0];
