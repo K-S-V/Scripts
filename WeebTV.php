@@ -22,46 +22,46 @@
           // Parse params
           if ($argc > 1)
             {
-              $doubleParam = false;
+              $paramSwitch = false;
               for ($i = 1; $i < $argc; $i++)
                 {
-                  $arg     = $argv[$i];
-                  $isparam = preg_match('/^--/', $arg);
+                  $arg      = $argv[$i];
+                  $isSwitch = preg_match('/^--/', $arg);
 
-                  if ($isparam)
+                  if ($isSwitch)
                       $arg = preg_replace('/^--/', '', $arg);
 
-                  if ($doubleParam && $isparam)
+                  if ($paramSwitch && $isSwitch)
                     {
-                      echo "[param] expected after '$doubleParam' switch (" . self::$ACCEPTED[1][$doubleParam] . ")\n";
+                      echo "[param] expected after '$paramSwitch' switch (" . self::$ACCEPTED[1][$paramSwitch] . ")\n";
                       exit(1);
                     }
-                  else if (!$doubleParam && !$isparam)
+                  else if (!$paramSwitch && !$isSwitch)
                     {
                       echo "'$arg' is an invalid switch, use --help to display valid switches\n";
                       exit(1);
                     }
-                  else if (!$doubleParam && $isparam)
+                  else if (!$paramSwitch && $isSwitch)
                     {
                       if (isset($this->params[$arg]))
                         {
                           echo "'$arg' switch cannot occur more than once\n";
-                          die;
+                          exit(1);
                         }
 
                       $this->params[$arg] = true;
                       if (isset(self::$ACCEPTED[1][$arg]))
-                          $doubleParam = $arg;
+                          $paramSwitch = $arg;
                       else if (!isset(self::$ACCEPTED[0][$arg]))
                         {
                           echo "there's no '$arg' switch, use --help to display all switches\n";
                           exit(1);
                         }
                     }
-                  else if ($doubleParam && !$isparam)
+                  else if ($paramSwitch && !$isSwitch)
                     {
-                      $this->params[$doubleParam] = $arg;
-                      $doubleParam                = false;
+                      $this->params[$paramSwitch] = $arg;
+                      $paramSwitch                = false;
                     }
                 }
             }
@@ -71,7 +71,7 @@
               if (isset(self::$ACCEPTED[1][$k]) && $v === true)
                 {
                   echo "[param] expected after '$k' switch (" . self::$ACCEPTED[1][$k] . ")\n";
-                  die;
+                  exit(1);
                 }
         }
 

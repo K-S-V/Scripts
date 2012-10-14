@@ -26,53 +26,53 @@
       );
       var $params = array();
 
-      public function __construct()
+      function __construct()
         {
           global $argc, $argv;
 
           // Parse params
           if ($argc > 1)
             {
-              $doubleParam = false;
+              $paramSwitch = false;
               for ($i = 1; $i < $argc; $i++)
                 {
-                  $arg     = $argv[$i];
-                  $isparam = preg_match('/^--/', $arg);
+                  $arg      = $argv[$i];
+                  $isSwitch = preg_match('/^--/', $arg);
 
-                  if ($isparam)
+                  if ($isSwitch)
                       $arg = preg_replace('/^--/', '', $arg);
 
-                  if ($doubleParam && $isparam)
+                  if ($paramSwitch && $isSwitch)
                     {
-                      echo "[param] expected after '$doubleParam' switch (" . self::$ACCEPTED[1][$doubleParam] . ")\n";
+                      echo "[param] expected after '$paramSwitch' switch (" . self::$ACCEPTED[1][$paramSwitch] . ")\n";
                       exit(1);
                     }
-                  else if (!$doubleParam && !$isparam)
+                  else if (!$paramSwitch && !$isSwitch)
                     {
                       echo "'$arg' is an invalid switch, use --help to display valid switches\n";
                       exit(1);
                     }
-                  else if (!$doubleParam && $isparam)
+                  else if (!$paramSwitch && $isSwitch)
                     {
                       if (isset($this->params[$arg]))
                         {
                           echo "'$arg' switch cannot occur more than once\n";
-                          die;
+                          exit(1);
                         }
 
                       $this->params[$arg] = true;
                       if (isset(self::$ACCEPTED[1][$arg]))
-                          $doubleParam = $arg;
+                          $paramSwitch = $arg;
                       else if (!isset(self::$ACCEPTED[0][$arg]))
                         {
                           echo "there's no '$arg' switch, use --help to display all switches\n";
                           exit(1);
                         }
                     }
-                  else if ($doubleParam && !$isparam)
+                  else if ($paramSwitch && !$isSwitch)
                     {
-                      $this->params[$doubleParam] = $arg;
-                      $doubleParam                = false;
+                      $this->params[$paramSwitch] = $arg;
+                      $paramSwitch                = false;
                     }
                 }
             }
@@ -82,11 +82,11 @@
               if (isset(self::$ACCEPTED[1][$k]) && $v === true)
                 {
                   echo "[param] expected after '$k' switch (" . self::$ACCEPTED[1][$k] . ")\n";
-                  die;
+                  exit(1);
                 }
         }
 
-      public function getParam($name)
+      function getParam($name)
         {
           if (isset($this->params[$name]))
               return $this->params[$name];
@@ -94,7 +94,7 @@
               return "";
         }
 
-      public function displayHelp()
+      function displayHelp()
         {
           echo "You can use script with following switches: \n\n";
           foreach (self::$ACCEPTED[0] as $key => $value)
@@ -379,17 +379,17 @@
       $cFilePos = (int) $filePos / (1024 * 1024);
       if ($cFilePos > $pFilePos)
         {
-          echo sprintf("Processed %d/%.2f MB\r", $cFilePos, $fileSize);
+          printf("Processed %d/%.2f MB\r", $cFilePos, $fileSize);
           $pFilePos = $cFilePos;
         }
     }
 
   // Fix flv header when required
-  if (!$video or !$audio)
+  if (!($audio and $video))
     {
-      if ($audio & !$video)
+      if ($audio and !$video)
           $flvHeader[4] = "\x04";
-      else if ($video & !$audio)
+      else if ($video and !$audio)
           $flvHeader[4] = "\x01";
       fseek($flvOut, 0);
       fwrite($flvOut, $flvHeader, $flvHeaderLen);
@@ -399,6 +399,6 @@
   fclose($flvOut);
   $timeEnd   = microtime(true);
   $timeTaken = sprintf("%.2f", $timeEnd - $timeStart);
-  echo "Processed input file in $timeTaken seconds\n";
+  echo "Processed input file in " . $timeTaken . " seconds\n";
   echo "Finished\n";
 ?>

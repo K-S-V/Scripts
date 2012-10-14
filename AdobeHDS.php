@@ -48,39 +48,39 @@
           // Parse params
           if ($argc > 1)
             {
-              $doubleParam = false;
+              $paramSwitch = false;
               for ($i = 1; $i < $argc; $i++)
                 {
-                  $arg     = $argv[$i];
-                  $isparam = preg_match('/^--/', $arg);
+                  $arg      = $argv[$i];
+                  $isSwitch = preg_match('/^--/', $arg);
 
-                  if ($isparam)
+                  if ($isSwitch)
                       $arg = preg_replace('/^--/', '', $arg);
 
-                  if ($doubleParam && $isparam)
-                      LogError("[param] expected after '$doubleParam' switch (" . self::$ACCEPTED[1][$doubleParam] . ")");
-                  else if (!$doubleParam && !$isparam)
+                  if ($paramSwitch && $isSwitch)
+                      LogError("[param] expected after '$paramSwitch' switch (" . self::$ACCEPTED[1][$paramSwitch] . ")");
+                  else if (!$paramSwitch && !$isSwitch)
                     {
                       if (isset($GLOBALS['baseFilename']) and (!$GLOBALS['baseFilename']))
                           $GLOBALS['baseFilename'] = $arg;
                       else
                           LogError("'$arg' is an invalid switch, use --help to display valid switches.");
                     }
-                  else if (!$doubleParam && $isparam)
+                  else if (!$paramSwitch && $isSwitch)
                     {
                       if (isset($this->params[$arg]))
                           LogError("'$arg' switch cannot occur more than once");
 
                       $this->params[$arg] = true;
                       if (isset(self::$ACCEPTED[1][$arg]))
-                          $doubleParam = $arg;
+                          $paramSwitch = $arg;
                       else if (!isset(self::$ACCEPTED[0][$arg]))
                           LogError("there's no '$arg' switch, use --help to display all switches.");
                     }
-                  else if ($doubleParam && !$isparam)
+                  else if ($paramSwitch && !$isSwitch)
                     {
-                      $this->params[$doubleParam] = $arg;
-                      $doubleParam                = false;
+                      $this->params[$paramSwitch] = $arg;
+                      $paramSwitch                = false;
                     }
                 }
             }
