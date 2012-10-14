@@ -892,14 +892,17 @@
           $files   = array();
           $retries = 0;
 
-          if (!file_exists($baseFilename . ($fragNum + 1) . $fileExt))
-              $fileExt = "";
           while (true)
             {
               if ($retries >= 50)
                   break;
-              $file = $baseFilename . ++$fragNum . $fileExt;
+              $file = $baseFilename . ++$fragNum;
               if (file_exists($file))
+                {
+                  $files[] = $file;
+                  $retries = 0;
+                }
+              else if (file_exists($file . $fileExt))
                 {
                   $files[] = $file;
                   $retries = 0;
@@ -911,7 +914,7 @@
           $fragCount = count($files);
           natsort($files);
           for ($i = 0; $i < $fragCount; $i++)
-              rename($files[$i], $baseFilename . ($i + 1) . $fileExt);
+              rename($files[$i], $baseFilename . ($i + 1));
         }
 
       function WriteMetadata($flv = false)
