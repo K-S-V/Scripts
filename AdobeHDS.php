@@ -765,25 +765,40 @@
             {
               while ((count($cc->ch) < $this->parallel) and ($fragNum < $this->fragCount))
                 {
-                  $fragNum += 1;
+                  $frag       = array();
+                  $fragNum    = $fragNum + 1;
+                  $frag['id'] = $fragNum;
                   LogInfo("Downloading $fragNum/$this->fragCount fragments", true);
-                  $download       = array();
-                  $download['id'] = $fragNum;
                   if (in_array_field($fragNum, "firstFragment", $this->fragTable, true))
                       $this->discontinuity = value_in_array_field($fragNum, "firstFragment", "discontinuityIndicator", $this->fragTable, true);
+                  else
+                    {
+                      $closest = 1;
+                      foreach ($this->fragTable as $item)
+                        {
+                          if ($item['firstFragment'] < $fragNum)
+                              $closest = $item['firstFragment'];
+                          else
+                              break;
+                        }
+                      $this->discontinuity = value_in_array_field($closest, "firstFragment", "discontinuityIndicator", $this->fragTable, true);
+                    }
                   if (($this->discontinuity == 1) or ($this->discontinuity == 3))
                     {
-                      $this->frags[$fragNum] = false;
-                      $this->rename          = true;
-                      $this->WriteFragment($download, $opt);
-                      continue;
+                      $frag['response'] = false;
+                      $this->rename     = true;
                     }
                   else if (file_exists($this->baseFilename . $fragNum))
                     {
                       LogDebug("Fragment $fragNum is already downloaded");
-                      $download['response'] = file_get_contents($this->baseFilename . $fragNum);
-                      $this->WriteFragment($download, $opt);
-                      continue;
+                      $frag['response'] = file_get_contents($this->baseFilename . $fragNum);
+                    }
+                  if (isset($frag['response']))
+                    {
+                      if ($this->WriteFragment($frag, $opt) === 2)
+                          break 2;
+                      else
+                          continue;
                     }
 
                   /* Increase or decrease segment number if current fragment is not available */
@@ -805,7 +820,9 @@
                 {
                   for ($i = 0; $i < count($downloads); $i++)
                     {
-                      $download = $downloads[$i];
+                      $frag       = array();
+                      $download   = $downloads[$i];
+                      $frag['id'] = $download['id'];
                       if ($download['status'] == 200)
                         {
                           if ($this->VerifyFragment($download['response']))
@@ -813,7 +830,7 @@
                               LogDebug("Fragment " . $this->baseFilename . $download['id'] . " successfully downloaded");
                               if (!($this->live or $this->play))
                                   file_put_contents($this->baseFilename . $download['id'], $download['response']);
-                              $this->WriteFragment($download, $opt);
+                              $frag['response'] = $download['response'];
                             }
                           else
                             {
@@ -833,21 +850,23 @@
                       else
                         {
                           LogDebug("Fragment " . $download['id'] . " doesn't exist, Status: " . $download['status']);
-                          $this->frags[$download['id']] = false;
-                          $this->rename                 = true;
+                          $frag['response'] = false;
+                          $this->rename     = true;
 
                           /* Resync with latest available fragment when we are left behind due to */
                           /* slow connection and short live window on streaming server. make sure */
                           /* to reset the last written fragment.                                  */
                           if ($this->live and ($i + 1 == count($downloads)) and !$cc->active)
                             {
-                              $this->WriteFragment($download, $opt);
                               LogDebug("Trying to resync with latest available fragment");
                               $this->UpdateBootstrapInfo($cc, $this->bootstrapUrl);
                               $fragNum        = $this->fragCount - 1;
                               $this->lastFrag = $fragNum;
                             }
                         }
+                      if (isset($frag['response']))
+                          if ($this->WriteFragment($frag, $opt) === 2)
+                              break 2;
                     }
                   unset($downloads, $download);
                 }
@@ -1152,8 +1171,7 @@
 
       function WriteFragment($download, &$opt)
         {
-          if (!(isset($this->frags[$download['id']]) and ($this->frags[$download['id']] === false)))
-              $this->frags[$download['id']] = $download;
+          $this->frags[$download['id']] = $download;
 
           $available = count($this->frags);
           for ($i = 0; $i < $available; $i++)
@@ -1161,7 +1179,7 @@
               if (isset($this->frags[$this->lastFrag + 1]))
                 {
                   $frag = $this->frags[$this->lastFrag + 1];
-                  if ($frag !== false)
+                  if ($frag['response'] !== false)
                     {
                       LogDebug("Writing fragment " . $frag['id'] . " to flv file");
                       if (!isset($opt['file']))
@@ -1216,7 +1234,8 @@
               if ($opt['tDuration'] and (($opt['duration'] + $this->duration) >= $opt['tDuration']))
                 {
                   LogInfo("");
-                  LogError("Finished recording " . ($opt['duration'] + $this->duration) . " seconds of content.", 0);
+                  LogInfo(($opt['duration'] + $this->duration) . " seconds of content has been recorded successfully.", true);
+                  return 2;
                 }
               if ($opt['filesize'] and ($this->filesize >= $opt['filesize']))
                 {
@@ -1229,6 +1248,7 @@
 
           if (!count($this->frags))
               unset($this->frags);
+          return true;
         }
     }
 
