@@ -249,7 +249,7 @@
       switch ($packetType)
       {
           case AUDIO:
-              if ($packetTS >= $prevAudioTS - FRAMEGAP_DURATION * 5)
+              if ($packetTS > $prevAudioTS - FRAMEGAP_DURATION * 5)
                 {
                   $FrameInfo = ReadByte($flvTag, $tagPos + $tagHeaderLen);
                   $CodecID   = ($FrameInfo & 0xF0) >> 4;
@@ -305,7 +305,7 @@
                   $audio = true;
               break;
           case VIDEO:
-              if ($packetTS >= $prevVideoTS - FRAMEGAP_DURATION * 5)
+              if ($packetTS > $prevVideoTS - FRAMEGAP_DURATION * 5)
                 {
                   $FrameInfo = ReadByte($flvTag, $tagPos + $tagHeaderLen);
                   $FrameType = ($FrameInfo & 0xF0) >> 4;
