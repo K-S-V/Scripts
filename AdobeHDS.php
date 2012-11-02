@@ -119,7 +119,7 @@
       function cURL($cookies = true, $cookie = 'Cookies.txt', $compression = 'gzip', $proxy = '')
         {
           $this->headers     = $this->headers();
-          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:15.0) Gecko/20100101 Firefox/15.0.1';
+          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:16.0) Gecko/20100101 Firefox/16.0';
           $this->compression = $compression;
           $this->cookies     = $cookies;
           if ($this->cookies == true)
@@ -880,26 +880,27 @@
           $this->processed = true;
         }
 
-      function VerifyFragment($frag)
+      function VerifyFragment(&$frag)
         {
           $fragPos = 0;
           $fragLen = strlen($frag);
 
-          // Some moronic live servers add wrong boxSize in header causing verification to fail
-          if ($this->live)
-              return true;
-
+          /* Some moronic servers add wrong boxSize in header causing fragment verification *
+           * to fail so we have to fix the boxSize before processing the fragment.          */
           while ($fragPos < $fragLen)
             {
               ReadBoxHeader($frag, $fragPos, $boxType, $boxSize);
               if ($boxType == "mdat")
                 {
-                  $frag    = substr($frag, $fragPos, $boxSize);
-                  $fragLen = strlen($frag);
-                  if ($fragLen == $boxSize)
+                  $len = strlen(substr($frag, $fragPos, $boxSize));
+                  if ($boxSize and ($len == $boxSize))
                       return true;
                   else
-                      return false;
+                    {
+                      $boxSize = $fragLen - $fragPos;
+                      WriteBoxSize($frag, $boxType, $boxSize);
+                      return true;
+                    }
                 }
               $fragPos += $boxSize;
             }
@@ -971,11 +972,11 @@
           $flv   = false;
           extract($opt, EXTR_IF_EXISTS);
 
-          $flvData = "";
-          $fragLen = 0;
-          $fragPos = 0;
+          $flvData  = "";
+          $fragPos  = 0;
+          $packetTS = 0;
+          $fragLen  = strlen($frag);
 
-          $fragLen = strlen($frag);
           if (!$this->VerifyFragment($frag))
             {
               LogInfo("Skipping fragment number $fragNum");
@@ -986,7 +987,10 @@
             {
               ReadBoxHeader($frag, $fragPos, $boxType, $boxSize);
               if ($boxType == "mdat")
+                {
+                  $fragLen = $fragPos + $boxSize;
                   break;
+                }
               $fragPos += $boxSize;
             }
 
@@ -1304,6 +1308,8 @@
           $boxSize -= 8;
           $pos += 8;
         }
+      if ($boxSize <= 0)
+          $boxSize = 0;
     }
 
   function WriteByte(&$str, $pos, $int)
@@ -1324,6 +1330,34 @@
       $str[$pos + 1] = pack("C", ($int & 0xFF0000) >> 16);
       $str[$pos + 2] = pack("C", ($int & 0xFF00) >> 8);
       $str[$pos + 3] = pack("C", $int & 0xFF);
+    }
+
+  function WriteBoxSize(&$frag, $type, $size)
+    {
+      $fragPos = 0;
+      $fragLen = strlen($frag);
+
+      while ($fragPos < $fragLen)
+        {
+          $boxSize = ReadInt32($frag, $fragPos);
+          $boxType = substr($frag, $fragPos + 4, 4);
+          if ($boxType == $type)
+            {
+              if ($boxSize == 1)
+                {
+                  WriteInt32($frag, $fragPos + 8, 0);
+                  WriteInt32($frag, $fragPos + 12, $size);
+                  $fragPos += 16;
+                }
+              else
+                {
+                  WriteInt32($frag, $fragPos, $size);
+                  $fragPos += 8;
+                }
+              break;
+            }
+          $fragPos += $boxSize;
+        }
     }
 
   function GetString($xmlObject)
