@@ -417,16 +417,27 @@
           LogInfo("Processing manifest info....");
           $xml     = $this->GetManifest($cc, $manifest);
           $baseUrl = $xml->xpath("/ns:manifest/ns:baseURL");
-          $baseUrl = isset($baseUrl[0]) ? GetString($baseUrl[0]) : "";
-          $url     = $xml->xpath("/ns:manifest/ns:media[@*]");
+          if (isset($baseUrl[0]))
+            {
+              $baseUrl = GetString($baseUrl[0]);
+              if (substr($baseUrl, -1) != "/")
+                  $baseUrl .= "/";
+            }
+          else
+              $baseUrl = "";
+          $url = $xml->xpath("/ns:manifest/ns:media[@*]");
           if (isset($url[0]['href']))
             {
               foreach ($url as $manifest)
                 {
-                  $bitrate                        = (int) $manifest['bitrate'];
-                  $manifests[$bitrate]['bitrate'] = $bitrate;
-                  $manifests[$bitrate]['url']     = NormalizePath($baseUrl . GetString($manifest['href']));
-                  $manifests[$bitrate]['xml']     = $this->GetManifest($cc, $manifests[$bitrate]['url']);
+                  $bitrate = (int) $manifest['bitrate'];
+                  $entry =& $manifests[$bitrate];
+                  $entry['bitrate'] = $bitrate;
+                  $href             = GetString($manifest['href']);
+                  if (substr($href, 0, 1) == "/")
+                      $href = substr($href, 1);
+                  $entry['url'] = NormalizePath($baseUrl . $href);
+                  $entry['xml'] = $this->GetManifest($cc, $entry['url']);
                 }
             }
           else
@@ -443,7 +454,11 @@
               // Extract baseUrl from manifest url
               $baseUrl = $xml->xpath("/ns:manifest/ns:baseURL");
               if (isset($baseUrl[0]))
+                {
                   $baseUrl = GetString($baseUrl[0]);
+                  if (substr($baseUrl, -1) == "/")
+                      $baseUrl = substr($baseUrl, 0, -1);
+                }
               else
                 {
                   $baseUrl = $manifest['url'];
@@ -468,7 +483,10 @@
                   $mediaEntry =& $this->media[$bitrate];
 
                   $mediaEntry['baseUrl'] = $baseUrl;
-                  $mediaEntry['url']     = $stream['url'];
+                  if (substr($stream['url'], 0, 1) == "/")
+                      $mediaEntry['url'] = substr($stream['url'], 1);
+                  else
+                      $mediaEntry['url'] = $stream['url'];
                   if (isset($stream[strtolower('bootstrapInfoId')]))
                       $bootstrap = $xml->xpath("/ns:manifest/ns:bootstrapInfo[@id='" . $stream[strtolower('bootstrapInfoId')] . "']");
                   else
