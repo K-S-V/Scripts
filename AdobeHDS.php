@@ -366,6 +366,8 @@
           $this->processed     = false;
           $this->quality       = "high";
           $this->rename        = false;
+          $this->segTable      = array();
+          $this->fragTable     = array();
           $this->segNum        = 1;
           $this->fragNum       = false;
           $this->frags         = array();
@@ -639,7 +641,6 @@
 
       function ParseAsrtBox($asrt, $pos)
         {
-          $this->segTable    = array();
           $version           = ReadByte($asrt, $pos);
           $flags             = ReadInt24($asrt, $pos + 1);
           $qualityEntryCount = ReadByte($asrt, $pos + 4);
@@ -658,8 +659,10 @@
               if ($segEntry['fragmentsPerSegment'] & 0x80000000)
                   $segEntry['fragmentsPerSegment'] = 0;
               $pos += 8;
-              LogDebug(sprintf(" %-8s%-10s", $segEntry['firstSegment'], $segEntry['fragmentsPerSegment']));
             }
+          unset($segEntry);
+          foreach ($this->segTable as $segEntry)
+              LogDebug(sprintf(" %-8s%-10s", $segEntry['firstSegment'], $segEntry['fragmentsPerSegment']));
           LogDebug("");
           $lastSegment     = end($this->segTable);
           $this->segNum    = $lastSegment['firstSegment'];
@@ -683,7 +686,6 @@
 
       function ParseAfrtBox($afrt, $pos)
         {
-          $this->fragTable   = array();
           $version           = ReadByte($afrt, $pos);
           $flags             = ReadInt24($afrt, $pos + 1);
           $timescale         = ReadInt32($afrt, $pos + 4);
@@ -705,8 +707,10 @@
               $pos += 16;
               if ($fragEntry['fragmentDuration'] == 0)
                   $fragEntry['discontinuityIndicator'] = ReadByte($afrt, $pos++);
-              LogDebug(sprintf(" %-8s%-16s%-16s%-16s", $fragEntry['firstFragment'], $fragEntry['firstFragmentTimestamp'], $fragEntry['fragmentDuration'], $fragEntry['discontinuityIndicator']));
             }
+          unset($fragEntry);
+          foreach ($this->fragTable as $fragEntry)
+              LogDebug(sprintf(" %-8s%-16s%-16s%-16s", $fragEntry['firstFragment'], $fragEntry['firstFragmentTimestamp'], $fragEntry['fragmentDuration'], $fragEntry['discontinuityIndicator']));
           LogDebug("");
 
           // Use fragment table in case of single segment
@@ -714,20 +718,16 @@
             {
               $firstFragment = reset($this->fragTable);
               $lastFragment  = end($this->fragTable);
-              if ($this->live)
+              if ($this->fragCount > 0)
+                  $this->fragCount += $firstFragment['firstFragment'] - 1;
+              if ($this->fragCount < $lastFragment['firstFragment'])
+                  $this->fragCount = $lastFragment['firstFragment'];
+              if ($this->fragNum === false)
                 {
-                  if ($this->fragNum === false)
-                    {
-                      $this->fragNum   = $lastFragment['firstFragment'] - 2;
-                      $this->fragCount = $lastFragment['firstFragment'];
-                    }
+                  if ($this->live)
+                      $this->fragNum = $this->fragCount - 2;
                   else
-                      $this->fragCount = $lastFragment['firstFragment'];
-                }
-              else if ($this->fragNum === false)
-                {
-                  $this->fragNum = $firstFragment['firstFragment'] - 1;
-                  $this->fragCount += $this->fragNum;
+                      $this->fragNum = $firstFragment['firstFragment'] - 1;
                 }
             }
         }
@@ -803,6 +803,7 @@
                     }
                   if (($this->discontinuity == 1) or ($this->discontinuity == 3))
                     {
+                      LogDebug("Skipping fragment $fragNum due to discontinuity");
                       $frag['response'] = false;
                       $this->rename     = true;
                     }
@@ -877,6 +878,9 @@
                           if ($this->live and ($i + 1 == count($downloads)) and !$cc->active)
                             {
                               LogDebug("Trying to resync with latest available fragment");
+                              if ($this->WriteFragment($frag, $opt) === 2)
+                                  break 2;
+                              unset($frag['response']);
                               $this->UpdateBootstrapInfo($cc, $this->bootstrapUrl);
                               $fragNum        = $this->fragCount - 1;
                               $this->lastFrag = $fragNum;
