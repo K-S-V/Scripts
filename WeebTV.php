@@ -102,7 +102,7 @@
       function cURL($cookies = true, $cookie = 'Cookies.txt', $compression = 'gzip', $proxy = '')
         {
           $this->headers     = $this->headers();
-          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:15.0) Gecko/20100101 Firefox/15.0';
+          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:17.0) Gecko/20100101 Firefox/17.0';
           $this->compression = $compression;
           $this->cookies     = $cookies;
           if ($this->cookies == true)
@@ -123,7 +123,6 @@
         {
           $headers[] = 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
           $headers[] = 'Connection: Keep-Alive';
-          $headers[] = 'Content-Type: application/x-www-form-urlencoded;charset=UTF-8';
           return $headers;
         }
 
@@ -165,8 +164,10 @@
 
       function post($url, $data)
         {
-          $process = curl_init($url);
-          curl_setopt($process, CURLOPT_HTTPHEADER, $this->headers);
+          $process   = curl_init($url);
+          $headers   = $this->headers;
+          $headers[] = 'Content-Type: application/x-www-form-urlencoded;charset=UTF-8';
+          curl_setopt($process, CURLOPT_HTTPHEADER, $headers);
           curl_setopt($process, CURLOPT_HEADER, 1);
           curl_setopt($process, CURLOPT_USERAGENT, $this->user_agent);
           if ($this->cookies == true)
