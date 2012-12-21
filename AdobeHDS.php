@@ -8,6 +8,7 @@
   define('AVC_SEQUENCE_HEADER', 0x00);
   define('AAC_SEQUENCE_HEADER', 0x00);
   define('AVC_SEQUENCE_END', 0x02);
+  define('FRAMEFIX_WINDOW', 1000);
   define('FRAMEGAP_DURATION', 8);
   define('INVALID_TIMESTAMP', -1);
 
@@ -382,7 +383,8 @@
       function InitDecoder()
         {
           $this->audio             = false;
-          $this->baseTS            = false;
+          $this->baseAudioTS       = INVALID_TIMESTAMP;
+          $this->baseVideoTS       = INVALID_TIMESTAMP;
           $this->filesize          = 0;
           $this->video             = false;
           $this->prevTagSize       = 4;
@@ -1025,22 +1027,60 @@
               $packetTS   = ReadInt24($frag, $fragPos + 4);
               $packetTS   = $packetTS | (ReadByte($frag, $fragPos + 7) << 24);
               if ($packetTS & 0x80000000)
-                {
                   $packetTS &= 0x7FFFFFFF;
-                  $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
-                }
-              if (($this->baseTS === false) and (($packetType == AUDIO) or ($packetType == VIDEO)))
-                  $this->baseTS = $packetTS;
-              if ($this->baseTS > 1000)
-                {
-                  $packetTS -= $this->baseTS;
-                  $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
-                }
               $totalTagLen = $this->tagHeaderLen + $packetSize + $this->prevTagSize;
+
+              // Try to fix the odd timestamps and make them zero based
               switch ($packetType)
               {
                   case AUDIO:
-                      if ($packetTS > $this->prevAudioTS - FRAMEGAP_DURATION * 5)
+                      if ($this->baseAudioTS == INVALID_TIMESTAMP)
+                          $this->baseAudioTS = $packetTS;
+                      if ($this->baseAudioTS > 1000)
+                        {
+                          if ($packetTS >= $this->baseAudioTS)
+                              $packetTS -= $this->baseAudioTS;
+                          else
+                              $packetTS = $this->prevAudioTS + FRAMEGAP_DURATION * 5;
+                        }
+                      if ($this->prevAudioTS != INVALID_TIMESTAMP)
+                        {
+                          $timeShift = $packetTS - $this->prevAudioTS;
+                          if ($timeShift > FRAMEFIX_WINDOW)
+                            {
+                              $this->baseAudioTS += $timeShift - FRAMEGAP_DURATION * 5;
+                              $packetTS = $this->prevAudioTS + FRAMEGAP_DURATION * 5;
+                            }
+                        }
+                      $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
+                      break;
+                  case VIDEO:
+                      if ($this->baseVideoTS == INVALID_TIMESTAMP)
+                          $this->baseVideoTS = $packetTS;
+                      if ($this->baseVideoTS > 1000)
+                        {
+                          if ($packetTS >= $this->baseVideoTS)
+                              $packetTS -= $this->baseVideoTS;
+                          else
+                              $packetTS = $this->prevVideoTS + FRAMEGAP_DURATION * 5;
+                        }
+                      if ($this->prevVideoTS != INVALID_TIMESTAMP)
+                        {
+                          $timeShift = $packetTS - $this->prevVideoTS;
+                          if ($timeShift > FRAMEFIX_WINDOW)
+                            {
+                              $this->baseVideoTS += $timeShift - FRAMEGAP_DURATION * 5;
+                              $packetTS = $this->prevVideoTS + FRAMEGAP_DURATION * 5;
+                            }
+                        }
+                      $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
+                      break;
+              }
+
+              switch ($packetType)
+              {
+                  case AUDIO:
+                      if ($packetTS > $this->prevAudioTS - FRAMEFIX_WINDOW)
                         {
                           $FrameInfo = ReadByte($frag, $fragPos + $this->tagHeaderLen);
                           $CodecID   = ($FrameInfo & 0xF0) >> 4;
@@ -1107,7 +1147,7 @@
                           $this->audio = true;
                       break;
                   case VIDEO:
-                      if ($packetTS > $this->prevVideoTS - FRAMEGAP_DURATION * 5)
+                      if ($packetTS > $this->prevVideoTS - FRAMEFIX_WINDOW)
                         {
                           $FrameInfo = ReadByte($frag, $fragPos + $this->tagHeaderLen);
                           $FrameType = ($FrameInfo & 0xF0) >> 4;

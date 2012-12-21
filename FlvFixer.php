@@ -8,6 +8,7 @@
   define('AVC_SEQUENCE_HEADER', 0x00);
   define('AAC_SEQUENCE_HEADER', 0x00);
   define('AVC_SEQUENCE_END', 0x02);
+  define('FRAMEFIX_WINDOW', 1000);
   define('FRAMEGAP_DURATION', 8);
   define('INVALID_TIMESTAMP', -1);
 
@@ -168,7 +169,8 @@
   $flvHeaderLen      = strlen($flvHeader);
   $format            = " %-8s%-16s%-16s%-8s";
   $audio             = false;
-  $baseTS            = false;
+  $baseAudioTS       = INVALID_TIMESTAMP;
+  $baseVideoTS       = INVALID_TIMESTAMP;
   $debug             = false;
   $metadata          = true;
   $video             = false;
@@ -231,13 +233,52 @@
       $packetTS   = ReadInt24($flvTag, $tagPos + 4);
       $packetTS   = $packetTS | (ReadByte($flvTag, $tagPos + 7) << 24);
 
-      if (($baseTS === false) and (($packetType == AUDIO) or ($packetType == VIDEO)))
-          $baseTS = $packetTS;
-      if ($baseTS > 1000)
-        {
-          $packetTS -= $baseTS;
-          WriteFlvTimestamp($flvTag, $tagPos, $packetTS);
-        }
+      // Try to fix the odd timestamps and make them zero based
+      switch ($packetType)
+      {
+          case AUDIO:
+              if ($baseAudioTS == INVALID_TIMESTAMP)
+                  $baseAudioTS = $packetTS;
+              if ($baseAudioTS > 1000)
+                {
+                  if ($packetTS >= $baseAudioTS)
+                      $packetTS -= $baseAudioTS;
+                  else
+                      $packetTS = $prevAudioTS + FRAMEGAP_DURATION * 5;
+                }
+              if ($prevAudioTS != INVALID_TIMESTAMP)
+                {
+                  $timeShift = $packetTS - $prevAudioTS;
+                  if ($timeShift > FRAMEFIX_WINDOW)
+                    {
+                      $baseAudioTS += $timeShift - FRAMEGAP_DURATION * 5;
+                      $packetTS = $prevAudioTS + FRAMEGAP_DURATION * 5;
+                    }
+                }
+              WriteFlvTimestamp($flvTag, $tagPos, $packetTS);
+              break;
+          case VIDEO:
+              if ($baseVideoTS == INVALID_TIMESTAMP)
+                  $baseVideoTS = $packetTS;
+              if ($baseVideoTS > 1000)
+                {
+                  if ($packetTS >= $baseVideoTS)
+                      $packetTS -= $baseVideoTS;
+                  else
+                      $packetTS = $prevVideoTS + FRAMEGAP_DURATION * 5;
+                }
+              if ($prevVideoTS != INVALID_TIMESTAMP)
+                {
+                  $timeShift = $packetTS - $prevVideoTS;
+                  if ($timeShift > FRAMEFIX_WINDOW)
+                    {
+                      $baseVideoTS += $timeShift - FRAMEGAP_DURATION * 5;
+                      $packetTS = $prevVideoTS + FRAMEGAP_DURATION * 5;
+                    }
+                }
+              WriteFlvTimestamp($flvTag, $tagPos, $packetTS);
+              break;
+      }
 
       $flvTag      = $flvTag . fread($flvIn, $packetSize + $prevTagSize);
       $totalTagLen = $tagHeaderLen + $packetSize + $prevTagSize;
@@ -249,7 +290,7 @@
       switch ($packetType)
       {
           case AUDIO:
-              if ($packetTS > $prevAudioTS - FRAMEGAP_DURATION * 5)
+              if ($packetTS > $prevAudioTS - FRAMEFIX_WINDOW)
                 {
                   $FrameInfo = ReadByte($flvTag, $tagPos + $tagHeaderLen);
                   $CodecID   = ($FrameInfo & 0xF0) >> 4;
@@ -305,7 +346,7 @@
                   $audio = true;
               break;
           case VIDEO:
-              if ($packetTS > $prevVideoTS - FRAMEGAP_DURATION * 5)
+              if ($packetTS > $prevVideoTS - FRAMEFIX_WINDOW)
                 {
                   $FrameInfo = ReadByte($flvTag, $tagPos + $tagHeaderLen);
                   $FrameType = ($FrameInfo & 0xF0) >> 4;
