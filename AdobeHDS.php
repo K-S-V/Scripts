@@ -370,8 +370,8 @@
           $this->rename        = false;
           $this->segTable      = array();
           $this->fragTable     = array();
-          $this->segNum        = 1;
-          $this->fragNum       = false;
+          $this->segStart      = false;
+          $this->fragStart     = false;
           $this->frags         = array();
           $this->fragCount     = 0;
           $this->fragsPerSeg   = 0;
@@ -667,19 +667,19 @@
           foreach ($this->segTable as $segEntry)
               LogDebug(sprintf(" %-8s%-10s", $segEntry['firstSegment'], $segEntry['fragmentsPerSegment']));
           LogDebug("");
-          $lastSegment     = end($this->segTable);
-          $this->segNum    = $lastSegment['firstSegment'];
+          $lastSegment = end($this->segTable);
+          if ($this->segStart === false)
+              $this->segStart = $lastSegment['firstSegment'];
           $this->fragCount = $lastSegment['fragmentsPerSegment'];
 
           // Use segment table in case of multiple segments
           if (count($this->segTable) > 1)
             {
               $secondLastSegment = prev($this->segTable);
-              if ($this->fragNum === false)
+              if ($this->fragStart === false)
                 {
-                  $this->segNum      = $lastSegment['firstSegment'];
                   $this->fragsPerSeg = $secondLastSegment['fragmentsPerSegment'];
-                  $this->fragNum     = $secondLastSegment['firstSegment'] * $this->fragsPerSeg + $this->fragCount - 2;
+                  $this->fragStart   = $secondLastSegment['firstSegment'] * $this->fragsPerSeg + $this->fragCount - 2;
                   $this->fragCount   = $secondLastSegment['firstSegment'] * $this->fragsPerSeg + $this->fragCount;
                 }
               else
@@ -721,17 +721,19 @@
             {
               $firstFragment = reset($this->fragTable);
               $lastFragment  = end($this->fragTable);
+              if ($this->fragStart === false)
+                {
+                  if ($this->live)
+                      $this->fragStart = $lastFragment['firstFragment'] - 2;
+                  else
+                      $this->fragStart = $firstFragment['firstFragment'] - 1;
+                  if ($this->fragStart < 0)
+                      $this->fragStart = 0;
+                }
               if ($this->fragCount > 0)
                   $this->fragCount += $firstFragment['firstFragment'] - 1;
               if ($this->fragCount < $lastFragment['firstFragment'])
                   $this->fragCount = $lastFragment['firstFragment'];
-              if ($this->fragNum === false)
-                {
-                  if ($this->live)
-                      $this->fragNum = $this->fragCount - 2;
-                  else
-                      $this->fragNum = $firstFragment['firstFragment'] - 1;
-                }
             }
         }
 
@@ -741,8 +743,8 @@
           extract($opt, EXTR_IF_EXISTS);
 
           $this->ParseManifest($cc, $manifest);
-          $segNum  = $this->segNum;
-          $fragNum = $this->fragNum;
+          $segNum  = $this->segStart;
+          $fragNum = $this->fragStart;
           if ($start)
             {
               if ($segNum > 1)
@@ -750,9 +752,9 @@
                       $segNum = (int) ($start / $this->fragsPerSeg + 1);
                   else
                       $segNum = (int) ($start / $this->fragsPerSeg);
-              $fragNum       = $start - 1;
-              $this->segNum  = $segNum;
-              $this->fragNum = $fragNum;
+              $fragNum         = $start - 1;
+              $this->segStart  = $segNum;
+              $this->fragStart = $fragNum;
             }
           $this->lastFrag  = $fragNum;
           $opt['cc']       = $cc;
@@ -1271,7 +1273,7 @@
                           $this->InitDecoder();
                           $this->DecodeFragment($frag['response'], $frag['id'], $opt);
                           $opt['file'] = WriteFlvFile($outFile, $this->audio, $this->video);
-                          if (!($this->live or ($this->fragNum > 0) or $this->filesize or $opt['tDuration']))
+                          if (!($this->live or ($this->fragStart > 0) or $this->filesize or $opt['tDuration']))
                               $this->WriteMetadata($opt['file']);
 
                           $opt['debug'] = $this->debug;
