@@ -8,7 +8,6 @@
   define('AVC_SEQUENCE_HEADER', 0x00);
   define('AAC_SEQUENCE_HEADER', 0x00);
   define('AVC_SEQUENCE_END', 0x02);
-  define('FRAMEFIX_WINDOW', 1000);
   define('FRAMEGAP_DURATION', 8);
   define('INVALID_TIMESTAMP', -1);
 
@@ -21,8 +20,9 @@
               'nometa' => 'do not save metadata in repaired file'
           ),
           1 => array(
-              'in'  => 'input filename of flv file to be repaired',
-              'out' => 'output filename for repaired file'
+              'fixwindow' => 'timestamp gap between frames to consider as timeshift',
+              'in'        => 'input filename of flv file to be repaired',
+              'out'       => 'output filename for repaired file'
           )
       );
       var $params = array();
@@ -99,9 +99,9 @@
         {
           echo "You can use script with following switches: \n\n";
           foreach (self::$ACCEPTED[0] as $key => $value)
-              printf(" --%-12s%s\n", $key, $value);
+              printf(" --%-18s%s\n", $key, $value);
           foreach (self::$ACCEPTED[1] as $key => $value)
-              printf(" --%-3s%-9s%s\n", $key, " [param]", $value);
+              printf(" --%-9s%-9s%s\n", $key, " [param]", $value);
         }
     }
 
@@ -172,6 +172,7 @@
   $baseAudioTS       = INVALID_TIMESTAMP;
   $baseVideoTS       = INVALID_TIMESTAMP;
   $debug             = false;
+  $fixWindow         = 1000;
   $metadata          = true;
   $video             = false;
   $prevTagSize       = 4;
@@ -197,6 +198,8 @@
       $debug = true;
   if ($cli->getParam('nometa'))
       $metadata = false;
+  if ($cli->getParam('fixWindow'))
+      $fixWindow = $cli->getParam('fixWindow');
   if ($cli->getParam('in'))
       $in = $cli->getParam('in');
   else
@@ -249,7 +252,7 @@
               if ($prevAudioTS != INVALID_TIMESTAMP)
                 {
                   $timeShift = $packetTS - $prevAudioTS;
-                  if ($timeShift > FRAMEFIX_WINDOW)
+                  if ($timeShift > $fixWindow)
                     {
                       $baseAudioTS += $timeShift - FRAMEGAP_DURATION * 5;
                       $packetTS = $prevAudioTS + FRAMEGAP_DURATION * 5;
@@ -270,7 +273,7 @@
               if ($prevVideoTS != INVALID_TIMESTAMP)
                 {
                   $timeShift = $packetTS - $prevVideoTS;
-                  if ($timeShift > FRAMEFIX_WINDOW)
+                  if ($timeShift > $fixWindow)
                     {
                       $baseVideoTS += $timeShift - FRAMEGAP_DURATION * 5;
                       $packetTS = $prevVideoTS + FRAMEGAP_DURATION * 5;
@@ -290,7 +293,7 @@
       switch ($packetType)
       {
           case AUDIO:
-              if ($packetTS > $prevAudioTS - FRAMEFIX_WINDOW)
+              if ($packetTS > $prevAudioTS - $fixWindow)
                 {
                   $FrameInfo = ReadByte($flvTag, $tagPos + $tagHeaderLen);
                   $CodecID   = ($FrameInfo & 0xF0) >> 4;
@@ -346,7 +349,7 @@
                   $audio = true;
               break;
           case VIDEO:
-              if ($packetTS > $prevVideoTS - FRAMEFIX_WINDOW)
+              if ($packetTS > $prevVideoTS - $fixWindow)
                 {
                   $FrameInfo = ReadByte($flvTag, $tagPos + $tagHeaderLen);
                   $FrameType = ($FrameInfo & 0xF0) >> 4;

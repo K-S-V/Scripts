@@ -8,7 +8,6 @@
   define('AVC_SEQUENCE_HEADER', 0x00);
   define('AAC_SEQUENCE_HEADER', 0x00);
   define('AVC_SEQUENCE_END', 0x02);
-  define('FRAMEFIX_WINDOW', 1000);
   define('FRAMEGAP_DURATION', 8);
   define('INVALID_TIMESTAMP', -1);
 
@@ -29,6 +28,7 @@
               'duration'  => 'stop recording after specified number of seconds',
               'filesize'  => 'split output file in chunks of specified size (MB)',
               'fragments' => 'base filename for fragments',
+              'fixwindow' => 'timestamp gap between frames to consider as timeshift',
               'manifest'  => 'manifest file for downloading of fragments',
               'outdir'    => 'destination folder for output file',
               'outfile'   => 'filename to use for output file',
@@ -345,7 +345,7 @@
   class F4F
     {
       var $audio, $auth, $baseFilename, $baseTS, $bootstrapUrl, $baseUrl, $debug, $duration, $fileCount, $filesize;
-      var $format, $live, $media, $outDir, $outFile, $parallel, $play, $processed, $quality, $rename, $video;
+      var $fixWindow, $format, $live, $media, $outDir, $outFile, $parallel, $play, $processed, $quality, $rename, $video;
       var $prevTagSize, $tagHeaderLen;
       var $segTable, $fragTable, $segNum, $fragNum, $frags, $fragCount, $fragsPerSeg, $lastFrag, $fragUrl, $discontinuity;
       var $prevAudioTS, $prevVideoTS, $pAudioTagLen, $pVideoTagLen, $pAudioTagPos, $pVideoTagPos;
@@ -359,6 +359,7 @@
           $this->debug         = false;
           $this->duration      = 0;
           $this->fileCount     = 1;
+          $this->fixWindow     = 1000;
           $this->format        = "";
           $this->live          = false;
           $this->outDir        = "";
@@ -1048,7 +1049,7 @@
                       if ($this->prevAudioTS != INVALID_TIMESTAMP)
                         {
                           $timeShift = $packetTS - $this->prevAudioTS;
-                          if ($timeShift > FRAMEFIX_WINDOW)
+                          if ($timeShift > $this->fixWindow)
                             {
                               $this->baseAudioTS += $timeShift - FRAMEGAP_DURATION * 5;
                               $packetTS = $this->prevAudioTS + FRAMEGAP_DURATION * 5;
@@ -1069,7 +1070,7 @@
                       if ($this->prevVideoTS != INVALID_TIMESTAMP)
                         {
                           $timeShift = $packetTS - $this->prevVideoTS;
-                          if ($timeShift > FRAMEFIX_WINDOW)
+                          if ($timeShift > $this->fixWindow)
                             {
                               $this->baseVideoTS += $timeShift - FRAMEGAP_DURATION * 5;
                               $packetTS = $this->prevVideoTS + FRAMEGAP_DURATION * 5;
@@ -1082,7 +1083,7 @@
               switch ($packetType)
               {
                   case AUDIO:
-                      if ($packetTS > $this->prevAudioTS - FRAMEFIX_WINDOW)
+                      if ($packetTS > $this->prevAudioTS - $this->fixWindow)
                         {
                           $FrameInfo = ReadByte($frag, $fragPos + $this->tagHeaderLen);
                           $CodecID   = ($FrameInfo & 0xF0) >> 4;
@@ -1149,7 +1150,7 @@
                           $this->audio = true;
                       break;
                   case VIDEO:
-                      if ($packetTS > $this->prevVideoTS - FRAMEFIX_WINDOW)
+                      if ($packetTS > $this->prevVideoTS - $this->fixWindow)
                         {
                           $FrameInfo = ReadByte($frag, $fragPos + $this->tagHeaderLen);
                           $FrameType = ($FrameInfo & 0xF0) >> 4;
@@ -1601,6 +1602,7 @@
   $fileExt      = ".f4f";
   $fileCount    = 1;
   $filesize     = 0;
+  $fixWindow    = 1000;
   $fragCount    = 0;
   $fragNum      = 0;
   $logfile      = STDERR;
@@ -1645,6 +1647,7 @@
 
   $f4f->baseFilename =& $baseFilename;
   $f4f->debug =& $debug;
+  $f4f->fixWindow =& $fixWindow;
   $f4f->format =& $format;
   $f4f->outDir =& $outDir;
   $f4f->outFile =& $outFile;
@@ -1668,6 +1671,8 @@
       $duration = $cli->getParam('duration');
   if ($cli->getParam('filesize'))
       $filesize = $cli->getParam('filesize');
+  if ($cli->getParam('fixWindow'))
+      $fixWindow = $cli->getParam('fixWindow');
   if ($cli->getParam('fragments'))
       $baseFilename = $cli->getParam('fragments');
   if ($cli->getParam('manifest'))
