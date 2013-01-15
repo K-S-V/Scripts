@@ -120,7 +120,7 @@
       function cURL($cookies = true, $cookie = 'Cookies.txt', $compression = 'gzip', $proxy = '')
         {
           $this->headers     = $this->headers();
-          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:17.0) Gecko/20100101 Firefox/17.0';
+          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:18.0) Gecko/20100101 Firefox/18.0';
           $this->compression = $compression;
           $this->cookies     = $cookies;
           if ($this->cookies == true)
@@ -1616,6 +1616,9 @@
   $showHeader   = true;
   $start        = 0;
   $update       = false;
+
+  // Set large enough memory limit
+  ini_set("memory_limit", "512M");
 
   // Check if STDOUT is available
   $cli = new CLI();
