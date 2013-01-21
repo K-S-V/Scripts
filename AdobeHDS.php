@@ -8,7 +8,7 @@
   define('AVC_SEQUENCE_HEADER', 0x00);
   define('AAC_SEQUENCE_HEADER', 0x00);
   define('AVC_SEQUENCE_END', 0x02);
-  define('FRAMEGAP_DURATION', 8);
+  define('FRAMEFIX_STEP', 40);
   define('INVALID_TIMESTAMP', -1);
 
   class CLI
@@ -384,8 +384,7 @@
       function InitDecoder()
         {
           $this->audio             = false;
-          $this->baseAudioTS       = INVALID_TIMESTAMP;
-          $this->baseVideoTS       = INVALID_TIMESTAMP;
+          $this->baseTS            = INVALID_TIMESTAMP;
           $this->filesize          = 0;
           $this->video             = false;
           $this->prevTagSize       = 4;
@@ -1034,51 +1033,26 @@
               $totalTagLen = $this->tagHeaderLen + $packetSize + $this->prevTagSize;
 
               // Try to fix the odd timestamps and make them zero based
-              switch ($packetType)
-              {
-                  case AUDIO:
-                      if ($this->baseAudioTS == INVALID_TIMESTAMP)
-                          $this->baseAudioTS = $packetTS;
-                      if ($this->baseAudioTS > 1000)
-                        {
-                          if ($packetTS >= $this->baseAudioTS)
-                              $packetTS -= $this->baseAudioTS;
-                          else
-                              $packetTS = $this->prevAudioTS + FRAMEGAP_DURATION * 5;
-                        }
-                      if ($this->prevAudioTS != INVALID_TIMESTAMP)
-                        {
-                          $timeShift = $packetTS - $this->prevAudioTS;
-                          if ($timeShift > $this->fixWindow)
-                            {
-                              $this->baseAudioTS += $timeShift - FRAMEGAP_DURATION * 5;
-                              $packetTS = $this->prevAudioTS + FRAMEGAP_DURATION * 5;
-                            }
-                        }
-                      $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
-                      break;
-                  case VIDEO:
-                      if ($this->baseVideoTS == INVALID_TIMESTAMP)
-                          $this->baseVideoTS = $packetTS;
-                      if ($this->baseVideoTS > 1000)
-                        {
-                          if ($packetTS >= $this->baseVideoTS)
-                              $packetTS -= $this->baseVideoTS;
-                          else
-                              $packetTS = $this->prevVideoTS + FRAMEGAP_DURATION * 5;
-                        }
-                      if ($this->prevVideoTS != INVALID_TIMESTAMP)
-                        {
-                          $timeShift = $packetTS - $this->prevVideoTS;
-                          if ($timeShift > $this->fixWindow)
-                            {
-                              $this->baseVideoTS += $timeShift - FRAMEGAP_DURATION * 5;
-                              $packetTS = $this->prevVideoTS + FRAMEGAP_DURATION * 5;
-                            }
-                        }
-                      $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
-                      break;
-              }
+              if ($this->baseTS == INVALID_TIMESTAMP)
+                  $this->baseTS = $packetTS;
+              $lastTS = $this->prevVideoTS >= $this->prevAudioTS ? $this->prevVideoTS : $this->prevAudioTS;
+              if ($this->baseTS > 1000)
+                {
+                  if ($packetTS >= $this->baseTS)
+                      $packetTS -= $this->baseTS;
+                  else
+                      $packetTS = $lastTS + FRAMEFIX_STEP;
+                }
+              if ($lastTS != INVALID_TIMESTAMP)
+                {
+                  $timeShift = $packetTS - $lastTS;
+                  if ($timeShift > $this->fixWindow)
+                    {
+                      $this->baseTS += $timeShift - FRAMEFIX_STEP;
+                      $packetTS = $lastTS + FRAMEFIX_STEP;
+                    }
+                }
+              $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
 
               switch ($packetType)
               {
@@ -1116,7 +1090,7 @@
                                   if (($this->prevAudioTS != INVALID_TIMESTAMP) and ($packetTS <= $this->prevAudioTS))
                                     {
                                       LogDebug(sprintf("%s\n" . $this->format, "Fixing audio timestamp", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize), $debug);
-                                      $packetTS += FRAMEGAP_DURATION + ($this->prevAudioTS - $packetTS);
+                                      $packetTS += (FRAMEFIX_STEP / 5) + ($this->prevAudioTS - $packetTS);
                                       $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
                                     }
                               if (is_resource($flv))
@@ -1189,7 +1163,7 @@
                                   if (($this->prevVideoTS != INVALID_TIMESTAMP) and ($packetTS <= $this->prevVideoTS))
                                     {
                                       LogDebug(sprintf("%s\n" . $this->format, "Fixing video timestamp", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize), $debug);
-                                      $packetTS += FRAMEGAP_DURATION + ($this->prevVideoTS - $packetTS);
+                                      $packetTS += (FRAMEFIX_STEP / 5) + ($this->prevVideoTS - $packetTS);
                                       $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
                                     }
                               if (is_resource($flv))
@@ -1674,8 +1648,8 @@
       $duration = $cli->getParam('duration');
   if ($cli->getParam('filesize'))
       $filesize = $cli->getParam('filesize');
-  if ($cli->getParam('fixWindow'))
-      $fixWindow = $cli->getParam('fixWindow');
+  if ($cli->getParam('fixwindow'))
+      $fixWindow = $cli->getParam('fixwindow');
   if ($cli->getParam('fragments'))
       $baseFilename = $cli->getParam('fragments');
   if ($cli->getParam('manifest'))
