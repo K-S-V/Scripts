@@ -1033,9 +1033,10 @@
               $totalTagLen = $this->tagHeaderLen + $packetSize + $this->prevTagSize;
 
               // Try to fix the odd timestamps and make them zero based
-              if ($this->baseTS == INVALID_TIMESTAMP)
+              $currentTS = $packetTS;
+              $lastTS    = $this->prevVideoTS >= $this->prevAudioTS ? $this->prevVideoTS : $this->prevAudioTS;
+              if (($this->baseTS == INVALID_TIMESTAMP) and (($packetType == AUDIO) or ($packetType == VIDEO)))
                   $this->baseTS = $packetTS;
-              $lastTS = $this->prevVideoTS >= $this->prevAudioTS ? $this->prevVideoTS : $this->prevAudioTS;
               if ($this->baseTS > 1000)
                 {
                   if ($packetTS >= $this->baseTS)
@@ -1052,7 +1053,8 @@
                       $packetTS = $lastTS + FRAMEFIX_STEP;
                     }
                 }
-              $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
+              if ($packetTS != $currentTS)
+                  $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
 
               switch ($packetType)
               {
@@ -1322,13 +1324,13 @@
       return $int64;
     }
 
-  function ReadString($frag, &$fragPos)
+  function ReadString($str, &$pos)
     {
-      $strlen = 0;
-      while ($frag[$fragPos + $strlen] != "\x00")
-          $strlen++;
-      $str = substr($frag, $fragPos, $strlen);
-      $fragPos += $strlen + 1;
+      $len = 0;
+      while ($str[$pos + $len] != "\x00")
+          $len++;
+      $str = substr($str, $pos, $len);
+      $pos += $len + 1;
       return $str;
     }
 

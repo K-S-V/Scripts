@@ -237,9 +237,10 @@
       $packetTS   = $packetTS | (ReadByte($flvTag, $tagPos + 7) << 24);
 
       // Try to fix the odd timestamps and make them zero based
-      if ($baseTS == INVALID_TIMESTAMP)
+      $currentTS = $packetTS;
+      $lastTS    = $prevVideoTS >= $prevAudioTS ? $prevVideoTS : $prevAudioTS;
+      if (($baseTS == INVALID_TIMESTAMP) and (($packetType == AUDIO) or ($packetType == VIDEO)))
           $baseTS = $packetTS;
-      $lastTS = $prevVideoTS >= $prevAudioTS ? $prevVideoTS : $prevAudioTS;
       if ($baseTS > 1000)
         {
           if ($packetTS >= $baseTS)
@@ -261,15 +262,16 @@
                   $negTS = INVALID_TIMESTAMP;
               if ($negTS == INVALID_TIMESTAMP)
                 {
-                  $currentTS = $lastTS + FRAMEFIX_STEP;
-                  $negTS     = $currentTS - $packetTS;
-                  $packetTS  = $currentTS;
+                  $fixedTS  = $lastTS + FRAMEFIX_STEP;
+                  $negTS    = $fixedTS - $packetTS;
+                  $packetTS = $fixedTS;
                 }
               else
                   $packetTS += $negTS;
             }
         }
-      WriteFlvTimestamp($flvTag, $tagPos, $packetTS);
+      if ($packetTS != $currentTS)
+          WriteFlvTimestamp($flvTag, $tagPos, $packetTS);
 
       $flvTag      = $flvTag . fread($flvIn, $packetSize + $prevTagSize);
       $totalTagLen = $tagHeaderLen + $packetSize + $prevTagSize;
