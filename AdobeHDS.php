@@ -925,7 +925,7 @@
                   else
                     {
                       $boxSize = $fragLen - $fragPos;
-                      WriteBoxSize($frag, $boxType, $boxSize);
+                      WriteBoxSize($frag, $fragPos, $boxType, $boxSize);
                       return true;
                     }
                 }
@@ -1374,31 +1374,14 @@
       $str[$pos + 3] = pack("C", $int & 0xFF);
     }
 
-  function WriteBoxSize(&$frag, $type, $size)
+  function WriteBoxSize(&$str, $pos, $type, $size)
     {
-      $fragPos = 0;
-      $fragLen = strlen($frag);
-
-      while ($fragPos < $fragLen)
+      if (substr($str, $pos - 4, 4) == $type)
+          WriteInt32($str, $pos - 8, $size);
+      else
         {
-          $boxSize = ReadInt32($frag, $fragPos);
-          $boxType = substr($frag, $fragPos + 4, 4);
-          if ($boxType == $type)
-            {
-              if ($boxSize == 1)
-                {
-                  WriteInt32($frag, $fragPos + 8, 0);
-                  WriteInt32($frag, $fragPos + 12, $size);
-                  $fragPos += 16;
-                }
-              else
-                {
-                  WriteInt32($frag, $fragPos, $size);
-                  $fragPos += 8;
-                }
-              break;
-            }
-          $fragPos += $boxSize;
+          WriteInt32($str, $pos - 8, 0);
+          WriteInt32($str, $pos - 4, $size);
         }
     }
 
