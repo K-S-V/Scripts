@@ -423,11 +423,7 @@
           $xml     = $this->GetManifest($cc, $manifest);
           $baseUrl = $xml->xpath("/ns:manifest/ns:baseURL");
           if (isset($baseUrl[0]))
-            {
               $baseUrl = GetString($baseUrl[0]);
-              if (substr($baseUrl, -1) != "/")
-                  $baseUrl .= "/";
-            }
           else
               $baseUrl = "";
           $url = $xml->xpath("/ns:manifest/ns:media[@*]");
@@ -439,10 +435,8 @@
                   $entry =& $manifests[$bitrate];
                   $entry['bitrate'] = $bitrate;
                   $href             = GetString($manifest['href']);
-                  if (substr($href, 0, 1) == "/")
-                      $href = substr($href, 1);
-                  $entry['url'] = NormalizePath($baseUrl . $href);
-                  $entry['xml'] = $this->GetManifest($cc, $entry['url']);
+                  $entry['url']     = NormalizePath(JoinUrl($baseUrl, $href));
+                  $entry['xml']     = $this->GetManifest($cc, $entry['url']);
                 }
             }
           else
@@ -459,11 +453,7 @@
               // Extract baseUrl from manifest url
               $baseUrl = $xml->xpath("/ns:manifest/ns:baseURL");
               if (isset($baseUrl[0]))
-                {
                   $baseUrl = GetString($baseUrl[0]);
-                  if (substr($baseUrl, -1) == "/")
-                      $baseUrl = substr($baseUrl, 0, -1);
-                }
               else
                 {
                   $baseUrl = $manifest['url'];
@@ -500,7 +490,7 @@
                     {
                       $bootstrapUrl = GetString($bootstrap[0]['url']);
                       if (!isHttpUrl($bootstrapUrl))
-                          $bootstrapUrl = $mediaEntry['baseUrl'] . "/$bootstrapUrl";
+                          $bootstrapUrl = JoinUrl($mediaEntry['baseUrl'], $bootstrapUrl);
                       $mediaEntry['bootstrapUrl'] = NormalizePath($bootstrapUrl);
                       if ($cc->get($mediaEntry['bootstrapUrl']) != 200)
                           LogError("Failed to get bootstrap info");
@@ -513,6 +503,7 @@
                   else
                       $mediaEntry['metadata'] = "";
                 }
+              unset($mediaEntry);
             }
 
           // Available qualities
@@ -779,7 +770,7 @@
           if (isHttpUrl($this->media['url']))
               $this->fragUrl = $this->media['url'];
           else
-              $this->fragUrl = $this->baseUrl . "/" . $this->media['url'];
+              $this->fragUrl = JoinUrl($this->baseUrl, $this->media['url']);
           $this->fragUrl = NormalizePath($this->fragUrl);
           LogDebug("Base Fragment Url:\n" . $this->fragUrl . "\n");
           LogDebug("Downloading Fragments:\n");
@@ -1398,6 +1389,15 @@
           return false;
     }
 
+  function JoinUrl($firstUrl, $secondUrl)
+    {
+      if ($firstUrl and (substr($firstUrl, -1) == '/'))
+          $firstUrl = substr($firstUrl, 0, -1);
+      if ($secondUrl and (substr($secondUrl, 0, 1) == '/'))
+          $secondUrl = substr($secondUrl, 1);
+      return $firstUrl . "/" . $secondUrl;
+    }
+
   function KeyName(array $a, $pos)
     {
       $temp = array_slice($a, $pos, 1, true);
@@ -1717,10 +1717,12 @@
   if (!$outFile)
     {
       $baseFilename = str_replace('\\', '/', $baseFilename);
-      if ($baseFilename and !((substr($baseFilename, -1) == '/') or (substr($baseFilename, -1) == ':')))
+      $lastChar     = substr($baseFilename, -1);
+      if ($baseFilename and !(($lastChar == '/') or ($lastChar == ':')))
         {
-          if (strrpos($baseFilename, '/'))
-              $outFile = substr($baseFilename, strrpos($baseFilename, '/') + 1);
+          $lastSlash = strrpos($baseFilename, '/');
+          if ($lastSlash)
+              $outFile = substr($baseFilename, $lastSlash + 1);
           else
               $outFile = $baseFilename;
         }
