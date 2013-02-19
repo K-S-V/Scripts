@@ -59,7 +59,7 @@
                       $arg = preg_replace('/^--/', '', $arg);
 
                   if ($paramSwitch && $isSwitch)
-                      LogError("[param] expected after '$paramSwitch' switch (" . self::$ACCEPTED[1][$paramSwitch] . ")");
+                      LogError("[param] expected after '$paramSwitch' switch (" . self::$ACCEPTED[1][$paramSwitch] . ')');
                   else if (!$paramSwitch && !$isSwitch)
                     {
                       if (isset($GLOBALS['baseFilename']) and (!$GLOBALS['baseFilename']))
@@ -89,7 +89,7 @@
           // Final check
           foreach ($this->params as $k => $v)
               if (isset(self::$ACCEPTED[1][$k]) && $v === true)
-                  LogError("[param] expected after '$k' switch (" . self::$ACCEPTED[1][$k] . ")");
+                  LogError("[param] expected after '$k' switch (" . self::$ACCEPTED[1][$k] . ')');
         }
 
       function getParam($name)
@@ -461,8 +461,6 @@
                       $baseUrl = substr($baseUrl, 0, strpos($baseUrl, '?'));
                   $baseUrl = substr($baseUrl, 0, strrpos($baseUrl, '/'));
                 }
-              if (!isHttpUrl($baseUrl))
-                  LogError("Provided manifest is not a valid HDS manifest");
 
               $streams = $xml->xpath("/ns:manifest/ns:media");
               foreach ($streams as $stream)
@@ -478,10 +476,10 @@
                   $mediaEntry =& $this->media[$bitrate];
 
                   $mediaEntry['baseUrl'] = $baseUrl;
-                  if (substr($stream['url'], 0, 1) == "/")
-                      $mediaEntry['url'] = substr($stream['url'], 1);
-                  else
-                      $mediaEntry['url'] = $stream['url'];
+                  $mediaEntry['url']     = $stream['url'];
+                  if (preg_match('/^rtm(p|pe|pt|pte|ps|pts|fp):\/\//i', $mediaEntry['baseUrl']) or preg_match('/^rtm(p|pe|pt|pte|ps|pts|fp):\/\//i', $mediaEntry['url']))
+                      LogError("Provided manifest is not a valid HDS manifest");
+
                   if (isset($stream[strtolower('bootstrapInfoId')]))
                       $bootstrap = $xml->xpath("/ns:manifest/ns:bootstrapInfo[@id='" . $stream[strtolower('bootstrapInfoId')] . "']");
                   else
@@ -603,8 +601,8 @@
               $this->live = true;
           $update              = ($byte & 0x10) >> 4;
           $timescale           = ReadInt32($bootstrapInfo, $pos + 9);
-          $currentMediaTime    = ReadInt64($bootstrapInfo, 13);
-          $smpteTimeCodeOffset = ReadInt64($bootstrapInfo, 21);
+          $currentMediaTime    = ReadInt64($bootstrapInfo, $pos + 13);
+          $smpteTimeCodeOffset = ReadInt64($bootstrapInfo, $pos + 21);
           $pos += 29;
           $movieIdentifier  = ReadString($bootstrapInfo, $pos);
           $serverEntryCount = ReadByte($bootstrapInfo, $pos++);
@@ -758,10 +756,10 @@
           $this->baseFilename = RemoveExtension($this->baseFilename);
           if (strrpos($this->baseFilename, '/'))
               $this->baseFilename = substr($this->baseFilename, strrpos($this->baseFilename, '/') + 1);
-          if (strpos($manifest, "?"))
-              $this->baseFilename = md5(substr($manifest, 0, strpos($manifest, "?"))) . "_" . $this->baseFilename;
+          if (strpos($manifest, '?'))
+              $this->baseFilename = md5(substr($manifest, 0, strpos($manifest, '?'))) . '_' . $this->baseFilename;
           else
-              $this->baseFilename = md5($manifest) . "_" . $this->baseFilename;
+              $this->baseFilename = md5($manifest) . '_' . $this->baseFilename;
           $this->baseFilename .= "Seg" . $segNum . "-Frag";
 
           if ($fragNum >= $this->fragCount)
@@ -1227,14 +1225,14 @@
                           else if ($this->outFile)
                             {
                               if ($opt['filesize'])
-                                  $outFile = $this->outDir . $this->outFile . "-" . $this->fileCount++ . ".flv";
+                                  $outFile = $this->outDir . $this->outFile . '-' . $this->fileCount++ . ".flv";
                               else
                                   $outFile = $this->outDir . $this->outFile . ".flv";
                             }
                           else
                             {
                               if ($opt['filesize'])
-                                  $outFile = $this->outDir . $this->baseFilename . "-" . $this->fileCount++ . ".flv";
+                                  $outFile = $this->outDir . $this->baseFilename . '-' . $this->fileCount++ . ".flv";
                               else
                                   $outFile = $this->outDir . $this->baseFilename . ".flv";
                             }
@@ -1291,19 +1289,19 @@
 
   function ReadByte($str, $pos)
     {
-      $int = unpack("C", $str[$pos]);
+      $int = unpack('C', $str[$pos]);
       return $int[1];
     }
 
   function ReadInt24($str, $pos)
     {
-      $int32 = unpack("N", "\x00" . substr($str, $pos, 3));
+      $int32 = unpack('N', "\x00" . substr($str, $pos, 3));
       return $int32[1];
     }
 
   function ReadInt32($str, $pos)
     {
-      $int32 = unpack("N", substr($str, $pos, 4));
+      $int32 = unpack('N', substr($str, $pos, 4));
       return $int32[1];
     }
 
@@ -1347,22 +1345,22 @@
 
   function WriteByte(&$str, $pos, $int)
     {
-      $str[$pos] = pack("C", $int);
+      $str[$pos] = pack('C', $int);
     }
 
   function WriteInt24(&$str, $pos, $int)
     {
-      $str[$pos]     = pack("C", ($int & 0xFF0000) >> 16);
-      $str[$pos + 1] = pack("C", ($int & 0xFF00) >> 8);
-      $str[$pos + 2] = pack("C", $int & 0xFF);
+      $str[$pos]     = pack('C', ($int & 0xFF0000) >> 16);
+      $str[$pos + 1] = pack('C', ($int & 0xFF00) >> 8);
+      $str[$pos + 2] = pack('C', $int & 0xFF);
     }
 
   function WriteInt32(&$str, $pos, $int)
     {
-      $str[$pos]     = pack("C", ($int & 0xFF000000) >> 24);
-      $str[$pos + 1] = pack("C", ($int & 0xFF0000) >> 16);
-      $str[$pos + 2] = pack("C", ($int & 0xFF00) >> 8);
-      $str[$pos + 3] = pack("C", $int & 0xFF);
+      $str[$pos]     = pack('C', ($int & 0xFF000000) >> 24);
+      $str[$pos + 1] = pack('C', ($int & 0xFF0000) >> 16);
+      $str[$pos + 2] = pack('C', ($int & 0xFF00) >> 8);
+      $str[$pos + 3] = pack('C', $int & 0xFF);
     }
 
   function WriteBoxSize(&$str, $pos, $type, $size)
@@ -1395,7 +1393,7 @@
           $firstUrl = substr($firstUrl, 0, -1);
       if ($secondUrl and (substr($secondUrl, 0, 1) == '/'))
           $secondUrl = substr($secondUrl, 1);
-      return $firstUrl . "/" . $secondUrl;
+      return $firstUrl . '/' . $secondUrl;
     }
 
   function KeyName(array $a, $pos)
@@ -1628,7 +1626,7 @@
   if ($cli->getParam('update'))
       $update = true;
   if ($cli->getParam('auth'))
-      $f4f->auth = "?" . $cli->getParam('auth');
+      $f4f->auth = '?' . $cli->getParam('auth');
   if ($cli->getParam('duration'))
       $duration = $cli->getParam('duration');
   if ($cli->getParam('filesize'))
@@ -1773,7 +1771,7 @@
               $f4f->InitDecoder();
               $f4f->DecodeFragment($frag, $i, $opt);
               if ($filesize)
-                  $opt['flv'] = WriteFlvFile($outDir . $outFile . "-" . $fileCount++ . ".flv", $f4f->audio, $f4f->video);
+                  $opt['flv'] = WriteFlvFile($outDir . $outFile . '-' . $fileCount++ . ".flv", $f4f->audio, $f4f->video);
               else
                   $opt['flv'] = WriteFlvFile($outDir . $outFile . ".flv", $f4f->audio, $f4f->video);
               if (!(($fragNum > 0) or $filesize))
