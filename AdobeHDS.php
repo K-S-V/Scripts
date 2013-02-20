@@ -120,7 +120,7 @@
       function cURL($cookies = true, $cookie = 'Cookies.txt', $compression = 'gzip', $proxy = '')
         {
           $this->headers     = $this->headers();
-          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:18.0) Gecko/20100101 Firefox/18.0';
+          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:19.0) Gecko/20100101 Firefox/19.0';
           $this->compression = $compression;
           $this->cookies     = $cookies;
           if ($this->cookies == true)
@@ -1190,7 +1190,12 @@
                   case SCRIPT_DATA:
                       break;
                   default:
-                      LogError("Unknown packet type " . $packetType . " encountered! Encrypted fragments can't be recovered.", 2);
+                      if (($packetType == 10) or ($packetType == 11))
+                          LogError("This stream is encrypted with Akamai DRM. Decryption of such streams isn't currently possible with this script.", 2);
+                      else if (($packetType == 40) or ($packetType == 41))
+                          LogError("This stream is encrypted with FlashAccess DRM. Decryption of such streams isn't currently possible with this script.", 2);
+                      else
+                          LogError("Unknown packet type " . $packetType . " encountered! Unable to proceed.");
               }
               $fragPos += $totalTagLen;
             }
