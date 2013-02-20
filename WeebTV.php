@@ -102,12 +102,12 @@
       function cURL($cookies = true, $cookie = 'Cookies.txt', $compression = 'gzip', $proxy = '')
         {
           $this->headers     = $this->headers();
-          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:18.0) Gecko/20100101 Firefox/18.0';
+          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:19.0) Gecko/20100101 Firefox/19.0';
           $this->compression = $compression;
           $this->cookies     = $cookies;
           if ($this->cookies == true)
               $this->cookie($cookie);
-          $this->cert_check = true;
+          $this->cert_check = false;
           $this->proxy      = $proxy;
           self::$ref++;
         }
@@ -144,19 +144,19 @@
           curl_setopt($process, CURLOPT_HTTPHEADER, $this->headers);
           curl_setopt($process, CURLOPT_HEADER, 0);
           curl_setopt($process, CURLOPT_USERAGENT, $this->user_agent);
+          curl_setopt($process, CURLOPT_ENCODING, $this->compression);
+          curl_setopt($process, CURLOPT_TIMEOUT, 30);
+          curl_setopt($process, CURLOPT_RETURNTRANSFER, 1);
+          curl_setopt($process, CURLOPT_FOLLOWLOCATION, 1);
+          if (!$this->cert_check)
+              curl_setopt($process, CURLOPT_SSL_VERIFYPEER, false);
           if ($this->cookies == true)
             {
               curl_setopt($process, CURLOPT_COOKIEFILE, $this->cookie_file);
               curl_setopt($process, CURLOPT_COOKIEJAR, $this->cookie_file);
             }
-          curl_setopt($process, CURLOPT_ENCODING, $this->compression);
-          curl_setopt($process, CURLOPT_TIMEOUT, 30);
           if ($this->proxy)
               $this->setProxy($process, $this->proxy);
-          curl_setopt($process, CURLOPT_RETURNTRANSFER, 1);
-          curl_setopt($process, CURLOPT_FOLLOWLOCATION, 1);
-          if (!$this->cert_check)
-              curl_setopt($process, CURLOPT_SSL_VERIFYPEER, 0);
           $return = curl_exec($process);
           curl_close($process);
           return $return;
@@ -170,21 +170,21 @@
           curl_setopt($process, CURLOPT_HTTPHEADER, $headers);
           curl_setopt($process, CURLOPT_HEADER, 1);
           curl_setopt($process, CURLOPT_USERAGENT, $this->user_agent);
+          curl_setopt($process, CURLOPT_ENCODING, $this->compression);
+          curl_setopt($process, CURLOPT_TIMEOUT, 30);
+          curl_setopt($process, CURLOPT_RETURNTRANSFER, 1);
+          curl_setopt($process, CURLOPT_FOLLOWLOCATION, 1);
+          curl_setopt($process, CURLOPT_POST, 1);
+          curl_setopt($process, CURLOPT_POSTFIELDS, $data);
+          if (!$this->cert_check)
+              curl_setopt($process, CURLOPT_SSL_VERIFYPEER, false);
           if ($this->cookies == true)
             {
               curl_setopt($process, CURLOPT_COOKIEFILE, $this->cookie_file);
               curl_setopt($process, CURLOPT_COOKIEJAR, $this->cookie_file);
             }
-          curl_setopt($process, CURLOPT_ENCODING, $this->compression);
-          curl_setopt($process, CURLOPT_TIMEOUT, 30);
           if ($this->proxy)
               $this->setProxy($process, $this->proxy);
-          curl_setopt($process, CURLOPT_POSTFIELDS, $data);
-          curl_setopt($process, CURLOPT_RETURNTRANSFER, 1);
-          curl_setopt($process, CURLOPT_FOLLOWLOCATION, 1);
-          curl_setopt($process, CURLOPT_POST, 1);
-          if (!$this->cert_check)
-              curl_setopt($process, CURLOPT_SSL_VERIFYPEER, 0);
           $return = curl_exec($process);
           curl_close($process);
           return $return;
@@ -220,55 +220,16 @@
         }
     }
 
-  function runAsyncBatch($command, $filename)
+  function Close($message)
     {
-      $BatchFile = fopen("WeebTV.bat", 'w');
-      fwrite($BatchFile, "@Echo off\r\n");
-      fwrite($BatchFile, "Title $filename\r\n");
-      fwrite($BatchFile, "$command\r\n");
-      fwrite($BatchFile, "Del \"WeebTV.bat\"\r\n");
-      fclose($BatchFile);
-      $WshShell = new COM("WScript.Shell");
-      $oExec    = $WshShell->Run("WeebTV.bat", 1, false);
-      unset($WshShell, $oExec);
-    }
-
-  function SafeFileName($filename)
-    {
-      $len = strlen($filename);
-      for ($i = 0; $i < $len; $i++)
-        {
-          $char = ord($filename[$i]);
-          if (($char < 32) || ($char >= 127))
-              $filename = substr_replace($filename, ' ', $i, 1);
-        }
-      $filename = preg_replace('/[\/\\\?\*\:\|\<\>]/i', ' ', $filename);
-      $filename = preg_replace('/\s\s+/i', ' ', $filename);
-      $filename = trim($filename);
-      return $filename;
-    }
-
-  function ShowHeader($header)
-    {
-      global $cli;
-      $len    = strlen($header);
-      $width  = (int) ((80 - $len) / 2) + $len;
-      $format = "\n%" . $width . "s\n\n";
-      if (!$cli->getParam('quiet'))
-          printf($format, $header);
-    }
-
-  function KeyName(array $a, $pos)
-    {
-      $temp = array_slice($a, $pos, 1, true);
-      return key($temp);
-    }
-
-  function ci_uksort($a, $b)
-    {
-      $a = strtolower($a);
-      $b = strtolower($b);
-      return strnatcmp($a, $b);
+      global $cli, $windows;
+      if ($message)
+          qecho($message . "\n");
+      if ($windows)
+          exec("chcp 1252");
+      if (!count($cli->params))
+          sleep(2);
+      die();
     }
 
   function Display($items, $format, $columns)
@@ -310,34 +271,10 @@
         }
     }
 
-  function Close($message)
+  function KeyName(array $a, $pos)
     {
-      global $cli, $windows;
-      if ($message)
-          qecho($message . "\n");
-      if ($windows)
-          exec("chcp 1252");
-      if (!count($cli->params))
-          sleep(2);
-      die();
-    }
-
-  function ReadSettings()
-    {
-      global $quality, $username, $password;
-      if (file_exists("WeebTV.xml"))
-        {
-          $xml      = simplexml_load_file("WeebTV.xml");
-          $quality  = $xml->quality;
-          $username = $xml->username;
-          $password = $xml->password;
-        }
-      else
-        {
-          $quality  = "HI";
-          $username = "";
-          $password = "";
-        }
+      $temp = array_slice($a, $pos, 1, true);
+      return key($temp);
     }
 
   function LogIn()
@@ -360,6 +297,52 @@
           $cc->get("http://weeb.tv/account/logout");
           $logged_in = false;
         }
+    }
+
+  function ReadSettings()
+    {
+      global $quality, $username, $password;
+      if (file_exists("WeebTV.xml"))
+        {
+          $xml      = simplexml_load_file("WeebTV.xml");
+          $quality  = $xml->quality;
+          $username = $xml->username;
+          $password = $xml->password;
+        }
+      else
+        {
+          $quality  = "HI";
+          $username = "";
+          $password = "";
+        }
+    }
+
+  function RunAsyncBatch($command, $filename)
+    {
+      $BatchFile = fopen("WeebTV.bat", 'w');
+      fwrite($BatchFile, "@Echo off\r\n");
+      fwrite($BatchFile, "Title $filename\r\n");
+      fwrite($BatchFile, "$command\r\n");
+      fwrite($BatchFile, "Del \"WeebTV.bat\"\r\n");
+      fclose($BatchFile);
+      $WshShell = new COM("WScript.Shell");
+      $oExec    = $WshShell->Run("WeebTV.bat", 1, false);
+      unset($WshShell, $oExec);
+    }
+
+  function SafeFileName($filename)
+    {
+      $len = strlen($filename);
+      for ($i = 0; $i < $len; $i++)
+        {
+          $char = ord($filename[$i]);
+          if (($char < 32) || ($char >= 127))
+              $filename = substr_replace($filename, ' ', $i, 1);
+        }
+      $filename = preg_replace('/[\/\\\?\*\:\|\<\>]/i', ' ', $filename);
+      $filename = preg_replace('/\s\s+/i', ' ', $filename);
+      $filename = trim($filename);
+      return $filename;
     }
 
   function ShowChannel($url, $filename)
@@ -448,9 +431,26 @@
       qprintf($format, "Command", $command);
       if ($rtmp && $token)
           if ($windows)
-              runAsyncBatch($command, $filename);
+              RunAsyncBatch($command, $filename);
           else
               exec($command);
+    }
+
+  function ShowHeader($header)
+    {
+      global $cli;
+      $len    = strlen($header);
+      $width  = (int) ((80 - $len) / 2) + $len;
+      $format = "\n%" . $width . "s\n\n";
+      if (!$cli->getParam('quiet'))
+          printf($format, $header);
+    }
+
+  function ci_uksort($a, $b)
+    {
+      $a = strtolower($a);
+      $b = strtolower($b);
+      return strnatcmp($a, $b);
     }
 
   function qecho($str)

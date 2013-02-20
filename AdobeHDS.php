@@ -125,7 +125,7 @@
           $this->cookies     = $cookies;
           if ($this->cookies == true)
               $this->cookie($cookie);
-          $this->cert_check = true;
+          $this->cert_check = false;
           $this->fragProxy  = false;
           $this->proxy      = $proxy;
           self::$ref++;
@@ -164,19 +164,19 @@
           curl_setopt($process, CURLOPT_HTTPHEADER, $this->headers);
           curl_setopt($process, CURLOPT_HEADER, 0);
           curl_setopt($process, CURLOPT_USERAGENT, $this->user_agent);
+          curl_setopt($process, CURLOPT_ENCODING, $this->compression);
+          curl_setopt($process, CURLOPT_TIMEOUT, 60);
+          curl_setopt($process, CURLOPT_RETURNTRANSFER, 1);
+          curl_setopt($process, CURLOPT_FOLLOWLOCATION, 1);
+          if (!$this->cert_check)
+              curl_setopt($process, CURLOPT_SSL_VERIFYPEER, false);
           if ($this->cookies == true)
             {
               curl_setopt($process, CURLOPT_COOKIEFILE, $this->cookie_file);
               curl_setopt($process, CURLOPT_COOKIEJAR, $this->cookie_file);
             }
-          curl_setopt($process, CURLOPT_ENCODING, $this->compression);
-          curl_setopt($process, CURLOPT_TIMEOUT, 60);
           if ($this->proxy)
               $this->setProxy($process, $this->proxy);
-          curl_setopt($process, CURLOPT_RETURNTRANSFER, 1);
-          curl_setopt($process, CURLOPT_FOLLOWLOCATION, 1);
-          if (!$this->cert_check)
-              curl_setopt($process, CURLOPT_SSL_VERIFYPEER, 0);
           $this->response = curl_exec($process);
           if ($this->response !== false)
               $status = curl_getinfo($process, CURLINFO_HTTP_CODE);
@@ -195,21 +195,21 @@
           curl_setopt($process, CURLOPT_HTTPHEADER, $headers);
           curl_setopt($process, CURLOPT_HEADER, 1);
           curl_setopt($process, CURLOPT_USERAGENT, $this->user_agent);
+          curl_setopt($process, CURLOPT_ENCODING, $this->compression);
+          curl_setopt($process, CURLOPT_TIMEOUT, 60);
+          curl_setopt($process, CURLOPT_RETURNTRANSFER, 1);
+          curl_setopt($process, CURLOPT_FOLLOWLOCATION, 1);
+          curl_setopt($process, CURLOPT_POST, 1);
+          curl_setopt($process, CURLOPT_POSTFIELDS, $data);
+          if (!$this->cert_check)
+              curl_setopt($process, CURLOPT_SSL_VERIFYPEER, false);
           if ($this->cookies == true)
             {
               curl_setopt($process, CURLOPT_COOKIEFILE, $this->cookie_file);
               curl_setopt($process, CURLOPT_COOKIEJAR, $this->cookie_file);
             }
-          curl_setopt($process, CURLOPT_ENCODING, $this->compression);
-          curl_setopt($process, CURLOPT_TIMEOUT, 60);
           if ($this->proxy)
               $this->setProxy($process, $this->proxy);
-          curl_setopt($process, CURLOPT_POSTFIELDS, $data);
-          curl_setopt($process, CURLOPT_RETURNTRANSFER, 1);
-          curl_setopt($process, CURLOPT_FOLLOWLOCATION, 1);
-          curl_setopt($process, CURLOPT_POST, 1);
-          if (!$this->cert_check)
-              curl_setopt($process, CURLOPT_SSL_VERIFYPEER, 0);
           $return = curl_exec($process);
           curl_close($process);
           return $return;
@@ -477,7 +477,7 @@
 
                   $mediaEntry['baseUrl'] = $baseUrl;
                   $mediaEntry['url']     = $stream['url'];
-                  if (preg_match('/^rtm(p|pe|pt|pte|ps|pts|fp):\/\//i', $mediaEntry['baseUrl']) or preg_match('/^rtm(p|pe|pt|pte|ps|pts|fp):\/\//i', $mediaEntry['url']))
+                  if (isRtmpUrl($mediaEntry['baseUrl']) or isRtmpUrl($mediaEntry['url']))
                       LogError("Provided manifest is not a valid HDS manifest");
 
                   if (isset($stream[strtolower('bootstrapInfoId')]))
@@ -1387,6 +1387,14 @@
           return false;
     }
 
+  function isRtmpUrl($url)
+    {
+      if (preg_match('/^rtm(p|pe|pt|pte|ps|pts|fp):\/\//i', $url))
+          return true;
+      else
+          return false;
+    }
+
   function JoinUrl($firstUrl, $secondUrl)
     {
       if ($firstUrl and (substr($firstUrl, -1) == '/'))
@@ -1661,8 +1669,7 @@
   // Update the script
   if ($update)
     {
-      $cc->cert_check = false;
-      $status         = $cc->get("https://raw.github.com/K-S-V/Scripts/master/AdobeHDS.php");
+      $status = $cc->get("https://raw.github.com/K-S-V/Scripts/master/AdobeHDS.php");
       if ($status == 200)
         {
           if (md5($cc->response) == md5(file_get_contents($argv[0])))
