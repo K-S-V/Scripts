@@ -213,7 +213,9 @@
   $timeStart = microtime(true);
   if (file_exists($in))
     {
-      $flvIn  = fopen($in, "rb");
+      $flvIn = fopen($in, "rb");
+      if (function_exists("stream_set_chunk_size"))
+          stream_set_chunk_size($flvIn, 8 * 1024 * 1024);
       $flvTag = fread($flvIn, $flvHeaderLen);
       if (strncmp($flvTag, "FLV", 3) != 0)
           die("Input file is not a valid FLV file\n");
@@ -413,7 +415,7 @@
               break;
       }
       $filePos += $totalTagLen;
-      $cFilePos = (int) $filePos / (1024 * 1024);
+      $cFilePos = (int) ($filePos / (1024 * 1024));
       if ($cFilePos > $pFilePos)
         {
           printf("Processed %d/%.2f MB\r", $cFilePos, $fileSize);
