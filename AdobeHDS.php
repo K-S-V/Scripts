@@ -42,7 +42,7 @@
       );
       var $params = array();
 
-      function __construct()
+      function __construct($handleUnknown = false)
         {
           global $argc, $argv;
 
@@ -59,24 +59,24 @@
                       $arg = preg_replace('/^--/', '', $arg);
 
                   if ($paramSwitch && $isSwitch)
-                      LogError("[param] expected after '$paramSwitch' switch (" . self::$ACCEPTED[1][$paramSwitch] . ')');
+                      $this->error("[param] expected after '$paramSwitch' switch (" . self::$ACCEPTED[1][$paramSwitch] . ')');
                   else if (!$paramSwitch && !$isSwitch)
                     {
-                      if (isset($GLOBALS['baseFilename']) and (!$GLOBALS['baseFilename']))
-                          $GLOBALS['baseFilename'] = $arg;
+                      if ($handleUnknown)
+                          $this->params['unknown'][] = $arg;
                       else
-                          LogError("'$arg' is an invalid switch, use --help to display valid switches.");
+                          $this->error("'$arg' is an invalid option, use --help to display valid switches.");
                     }
                   else if (!$paramSwitch && $isSwitch)
                     {
                       if (isset($this->params[$arg]))
-                          LogError("'$arg' switch cannot occur more than once");
+                          $this->error("'$arg' switch can't occur more than once");
 
                       $this->params[$arg] = true;
                       if (isset(self::$ACCEPTED[1][$arg]))
                           $paramSwitch = $arg;
                       else if (!isset(self::$ACCEPTED[0][$arg]))
-                          LogError("there's no '$arg' switch, use --help to display all switches.");
+                          $this->error("there's no '$arg' switch, use --help to display all switches.");
                     }
                   else if ($paramSwitch && !$isSwitch)
                     {
@@ -89,7 +89,21 @@
           // Final check
           foreach ($this->params as $k => $v)
               if (isset(self::$ACCEPTED[1][$k]) && $v === true)
-                  LogError("[param] expected after '$k' switch (" . self::$ACCEPTED[1][$k] . ')');
+                  $this->error("[param] expected after '$k' switch (" . self::$ACCEPTED[1][$k] . ')');
+        }
+
+      function displayHelp()
+        {
+          LogInfo("You can use script with following switches:\n");
+          foreach (self::$ACCEPTED[0] as $key => $value)
+              LogInfo(sprintf(" --%-18s%s", $key, $value));
+          foreach (self::$ACCEPTED[1] as $key => $value)
+              LogInfo(sprintf(" --%-9s%-9s%s", $key, " [param]", $value));
+        }
+
+      function error($msg)
+        {
+          LogError($msg);
         }
 
       function getParam($name)
@@ -98,15 +112,6 @@
               return $this->params[$name];
           else
               return "";
-        }
-
-      function displayHelp()
-        {
-          LogInfo("You can use script with following switches: \n");
-          foreach (self::$ACCEPTED[0] as $key => $value)
-              LogInfo(sprintf(" --%-18s%s", $key, $value));
-          foreach (self::$ACCEPTED[1] as $key => $value)
-              LogInfo(sprintf(" --%-9s%-9s%s", $key, " [param]", $value));
         }
     }
 
@@ -1429,9 +1434,7 @@
 
   function LogError($msg, $code = 1)
     {
-      global $quiet;
-      if (!$quiet)
-          PrintLine($msg);
+      LogInfo($msg);
       exit($code);
     }
 
@@ -1591,7 +1594,7 @@
   ini_set("memory_limit", "512M");
 
   // Check if STDOUT is available
-  $cli = new CLI();
+  $cli = new CLI(true);
   if ($cli->getParam('play'))
     {
       $play       = true;
@@ -1628,6 +1631,8 @@
   $f4f->rename =& $rename;
 
   // Process command line options
+  if (isset($cli->params['unknown']))
+      $baseFilename = $cli->params['unknown'][0];
   if ($cli->getParam('debug'))
       $debug = true;
   if ($cli->getParam('delete'))

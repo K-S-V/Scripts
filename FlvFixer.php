@@ -27,7 +27,7 @@
       );
       var $params = array();
 
-      function __construct()
+      function __construct($handleUnknown = false)
         {
           global $argc, $argv;
 
@@ -44,31 +44,24 @@
                       $arg = preg_replace('/^--/', '', $arg);
 
                   if ($paramSwitch && $isSwitch)
-                    {
-                      echo "[param] expected after '$paramSwitch' switch (" . self::$ACCEPTED[1][$paramSwitch] . ")\n";
-                      exit(1);
-                    }
+                      $this->error("[param] expected after '$paramSwitch' switch (" . self::$ACCEPTED[1][$paramSwitch] . ')');
                   else if (!$paramSwitch && !$isSwitch)
                     {
-                      echo "'$arg' is an invalid switch, use --help to display valid switches\n";
-                      exit(1);
+                      if ($handleUnknown)
+                          $this->params['unknown'][] = $arg;
+                      else
+                          $this->error("'$arg' is an invalid option, use --help to display valid switches.");
                     }
                   else if (!$paramSwitch && $isSwitch)
                     {
                       if (isset($this->params[$arg]))
-                        {
-                          echo "'$arg' switch cannot occur more than once\n";
-                          exit(1);
-                        }
+                          $this->error("'$arg' switch can't occur more than once");
 
                       $this->params[$arg] = true;
                       if (isset(self::$ACCEPTED[1][$arg]))
                           $paramSwitch = $arg;
                       else if (!isset(self::$ACCEPTED[0][$arg]))
-                        {
-                          echo "there's no '$arg' switch, use --help to display all switches\n";
-                          exit(1);
-                        }
+                          $this->error("there's no '$arg' switch, use --help to display all switches.");
                     }
                   else if ($paramSwitch && !$isSwitch)
                     {
@@ -81,10 +74,22 @@
           // Final check
           foreach ($this->params as $k => $v)
               if (isset(self::$ACCEPTED[1][$k]) && $v === true)
-                {
-                  echo "[param] expected after '$k' switch (" . self::$ACCEPTED[1][$k] . ")\n";
-                  exit(1);
-                }
+                  $this->error("[param] expected after '$k' switch (" . self::$ACCEPTED[1][$k] . ')');
+        }
+
+      function displayHelp()
+        {
+          printf("%s:\n\n", "You can use script with following switches");
+          foreach (self::$ACCEPTED[0] as $key => $value)
+              printf(" --%-18s%s\n", $key, $value);
+          foreach (self::$ACCEPTED[1] as $key => $value)
+              printf(" --%-9s%-9s%s\n", $key, " [param]", $value);
+        }
+
+      function error($msg)
+        {
+          printf("%s\n", $msg);
+          exit(1);
         }
 
       function getParam($name)
@@ -93,15 +98,6 @@
               return $this->params[$name];
           else
               return "";
-        }
-
-      function displayHelp()
-        {
-          echo "You can use script with following switches: \n\n";
-          foreach (self::$ACCEPTED[0] as $key => $value)
-              printf(" --%-18s%s\n", $key, $value);
-          foreach (self::$ACCEPTED[1] as $key => $value)
-              printf(" --%-9s%-9s%s\n", $key, " [param]", $value);
         }
     }
 
@@ -438,6 +434,6 @@
   fclose($flvOut);
   $timeEnd   = microtime(true);
   $timeTaken = sprintf("%.2f", $timeEnd - $timeStart);
-  echo "Processed input file in " . $timeTaken . " seconds\n";
-  echo "Finished\n";
+  printf("Processed input file in %s seconds\n", $timeTaken);
+  printf("Finished\n");
 ?>
