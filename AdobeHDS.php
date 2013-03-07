@@ -425,12 +425,20 @@
       function ParseManifest($cc, $manifest)
         {
           LogInfo("Processing manifest info....");
-          $xml     = $this->GetManifest($cc, $manifest);
+          $xml = $this->GetManifest($cc, $manifest);
+
+          // Extract baseUrl from manifest url
           $baseUrl = $xml->xpath("/ns:manifest/ns:baseURL");
           if (isset($baseUrl[0]))
               $baseUrl = GetString($baseUrl[0]);
           else
-              $baseUrl = "";
+            {
+              $baseUrl = $manifest;
+              if (strpos($baseUrl, '?') !== false)
+                  $baseUrl = substr($baseUrl, 0, strpos($baseUrl, '?'));
+              $baseUrl = substr($baseUrl, 0, strrpos($baseUrl, '/'));
+            }
+
           $url = $xml->xpath("/ns:manifest/ns:media[@*]");
           if (isset($url[0]['href']))
             {
@@ -440,8 +448,10 @@
                   $entry =& $manifests[$bitrate];
                   $entry['bitrate'] = $bitrate;
                   $href             = GetString($manifest['href']);
-                  $entry['url']     = NormalizePath(JoinUrl($baseUrl, $href));
-                  $entry['xml']     = $this->GetManifest($cc, $entry['url']);
+                  if (!isHttpUrl($href))
+                      $href = JoinUrl($baseUrl, $href);
+                  $entry['url'] = NormalizePath($href);
+                  $entry['xml'] = $this->GetManifest($cc, $entry['url']);
                 }
             }
           else
