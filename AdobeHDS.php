@@ -222,11 +222,12 @@
 
       function setProxy(&$process, $proxy)
         {
-          $type = substr($proxy, 0, stripos($proxy, "://"));
-          if ($type)
+          $type      = "";
+          $separator = strpos($proxy, "://");
+          if ($separator !== false)
             {
-              $type  = strtolower($type);
-              $proxy = substr($proxy, stripos($proxy, "://") + 3);
+              $type  = strtolower(substr($proxy, 0, $separator));
+              $proxy = substr($proxy, $separator + 3);
             }
           switch ($type)
           {
@@ -248,34 +249,34 @@
           if (!isset($this->mh))
               $this->mh = curl_multi_init();
           if (isset($this->ch[$id]))
-              return;
-          else
-              $download =& $this->ch[$id];
+              return false;
+          $download =& $this->ch[$id];
           $download['id']  = $id;
           $download['url'] = $url;
           $download['ch']  = curl_init($url);
           curl_setopt($download['ch'], CURLOPT_HTTPHEADER, $this->headers);
           curl_setopt($download['ch'], CURLOPT_HEADER, 0);
           curl_setopt($download['ch'], CURLOPT_USERAGENT, $this->user_agent);
+          curl_setopt($download['ch'], CURLOPT_ENCODING, $this->compression);
+          curl_setopt($download['ch'], CURLOPT_TIMEOUT, 300);
+          curl_setopt($download['ch'], CURLOPT_BINARYTRANSFER, 1);
+          curl_setopt($download['ch'], CURLOPT_RETURNTRANSFER, 1);
+          curl_setopt($download['ch'], CURLOPT_FOLLOWLOCATION, 1);
+          if (!$this->cert_check)
+              curl_setopt($download['ch'], CURLOPT_SSL_VERIFYPEER, false);
           if ($this->cookies == true)
             {
               curl_setopt($download['ch'], CURLOPT_COOKIEFILE, $this->cookie_file);
               curl_setopt($download['ch'], CURLOPT_COOKIEJAR, $this->cookie_file);
             }
-          curl_setopt($download['ch'], CURLOPT_ENCODING, $this->compression);
-          curl_setopt($download['ch'], CURLOPT_TIMEOUT, 300);
           if ($this->fragProxy and $this->proxy)
               $this->setProxy($download['ch'], $this->proxy);
-          curl_setopt($download['ch'], CURLOPT_BINARYTRANSFER, 1);
-          curl_setopt($download['ch'], CURLOPT_RETURNTRANSFER, 1);
-          curl_setopt($download['ch'], CURLOPT_FOLLOWLOCATION, 1);
-          if (!$this->cert_check)
-              curl_setopt($download['ch'], CURLOPT_SSL_VERIFYPEER, 0);
           curl_multi_add_handle($this->mh, $download['ch']);
           do
             {
               $this->mrc = curl_multi_exec($this->mh, $this->active);
             } while ($this->mrc == CURLM_CALL_MULTI_PERFORM);
+          return true;
         }
 
       function checkDownloads()
@@ -453,6 +454,7 @@
                   $entry['url'] = NormalizePath($href);
                   $entry['xml'] = $this->GetManifest($cc, $entry['url']);
                 }
+              unset($entry, $manifest);
             }
           else
             {

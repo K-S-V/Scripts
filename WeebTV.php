@@ -188,11 +188,12 @@
 
       function setProxy(&$process, $proxy)
         {
-          $type = substr($proxy, 0, stripos($proxy, "://"));
-          if ($type)
+          $type      = "";
+          $separator = strpos($proxy, "://");
+          if ($separator !== false)
             {
-              $type  = strtolower($type);
-              $proxy = substr($proxy, stripos($proxy, "://") + 3);
+              $type  = strtolower(substr($proxy, 0, $separator));
+              $proxy = substr($proxy, $separator + 3);
             }
           switch ($type)
           {
