@@ -1,23 +1,15 @@
 <?php
   class CLI
     {
-      protected static $ACCEPTED = array(
-          0 => array(
-              'help'  => 'displays this help',
-              'list'  => 'display formatted channels list and exit',
-              'print' => 'only print the base rtmpdump command, don\'t start anything',
-              'quiet' => 'disables unnecessary output'
-          ),
-          1 => array(
-              'proxy' => 'use proxy to retrieve channel information',
-              'url'   => 'use specified url without displaying channels list'
-          )
-      );
+      protected static $ACCEPTED = array();
       var $params = array();
 
-      function __construct($handleUnknown = false)
+      function __construct($options = false, $handleUnknown = false)
         {
           global $argc, $argv;
+
+          if ($options !== false)
+              self::$ACCEPTED = $options;
 
           // Parse params
           if ($argc > 1)
@@ -26,10 +18,10 @@
               for ($i = 1; $i < $argc; $i++)
                 {
                   $arg      = $argv[$i];
-                  $isSwitch = preg_match('/^--/', $arg);
+                  $isSwitch = preg_match('/^-+/', $arg);
 
                   if ($isSwitch)
-                      $arg = preg_replace('/^--/', '', $arg);
+                      $arg = preg_replace('/^-+/', '', $arg);
 
                   if ($paramSwitch && $isSwitch)
                       $this->error("[param] expected after '$paramSwitch' switch (" . self::$ACCEPTED[1][$paramSwitch] . ')');
@@ -101,12 +93,12 @@
           elseif (is_array($key))
               $k = $key;
           else
-              qecho("The secret key must be a string or long integer array\n");
+              LogInfo("The secret key must be a string or long integer array");
 
           if (count($k) > 4)
-              qecho("The secret key cannot be more than 16 characters or 4 long values\n");
+              LogInfo("The secret key cannot be more than 16 characters or 4 long values");
           elseif (count($k) == 0)
-              qecho("The secret key cannot be empty\n");
+              LogInfo("The secret key cannot be empty");
           elseif (count($k) < 4)
               for ($i = count($k); $i < 4; $i++)
                   $k[$i] = 0;
@@ -118,27 +110,27 @@
       function encrypt($plaintext)
         {
           if ($this->_key == null)
-              qecho("Secret key is undefined\n");
+              LogInfo("Secret key is undefined");
 
           if (is_string($plaintext))
               return $this->_encryptString($plaintext);
           elseif (is_array($plaintext))
               return $this->_encryptArray($plaintext);
           else
-              qecho("The plain text must be a string or long integer array\n");
+              LogInfo("The plain text must be a string or long integer array");
         }
 
       function decrypt($ciphertext)
         {
           if ($this->_key == null)
-              qecho("Secret key is undefined\n");
+              LogInfo("Secret key is undefined");
 
           if (is_string($ciphertext))
               return $this->_decryptString($ciphertext);
           elseif (is_array($ciphertext))
               return $this->_decryptArray($ciphertext);
           else
-              qecho("The cipher text must be a string or long integer array\n");
+              LogInfo("The cipher text must be a string or long integer array");
         }
 
       function _encryptString($str)
@@ -369,7 +361,7 @@
     {
       global $cli, $windows;
       if ($message)
-          qecho($message . "\n");
+          LogInfo($message);
       if ($windows)
           exec("chcp 1252");
       if (!count($cli->params))
@@ -413,7 +405,7 @@
                       printf($format, $cell, KeyName($items, $cell - 1));
                 }
             }
-          echo "\n\n";
+          printf("\n\n");
         }
     }
 
@@ -421,6 +413,27 @@
     {
       $temp = array_slice($a, $pos, 1, true);
       return key($temp);
+    }
+
+  function LogInfo($msg, $progress = false)
+    {
+      global $quiet;
+      if (!$quiet)
+          PrintLine($msg, $progress);
+    }
+
+  function PrintLine($msg, $progress = false)
+    {
+      if ($msg)
+        {
+          printf("\r%-79s\r", "");
+          if ($progress)
+              printf("%s\r", $msg);
+          else
+              printf("%s\n", $msg);
+        }
+      else
+          printf("\n");
     }
 
   function RunAsyncBatch($command, $filename)
@@ -454,7 +467,7 @@
   function ShowChannel($url, $filename)
     {
       global $cc, $cli, $format, $vlc, $windows, $xxtea;
-      qecho("Retrieving html . . .\n");
+      LogInfo("Retrieving html....");
       $cc->headers = $cc->headers();
 
       // Retrieve channel id and primary key
@@ -518,11 +531,11 @@
       $auth = $auth[1];
 
       if ($scheme == "http")
-          qprintf($format, "HTTP Url", "$scheme://$host" . (isset($port) ? ":$port" : "") . "/$playpath");
+          LogInfo(sprintf($format, "HTTP Url", "$scheme://$host" . (isset($port) ? ":$port" : "") . "/$playpath"));
       else
-          qprintf($format, "RTMP Url", "$scheme://$host" . (isset($port) ? ":$port" : "") . "/$app");
-      qprintf($format, "Playpath", $playpath);
-      qprintf($format, "Auth", $auth);
+          LogInfo(sprintf($format, "RTMP Url", "$scheme://$host" . (isset($port) ? ":$port" : "") . "/$app"));
+      LogInfo(sprintf($format, "Playpath", $playpath));
+      LogInfo(sprintf($format, "Auth", $auth));
 
       $filename = SafeFileName($filename);
       if (file_exists($filename . ".flv"))
@@ -540,11 +553,11 @@
 
       if ($cli->getParam('print'))
         {
-          echo $basecmd;
+          printf($basecmd);
           exit(0);
         }
 
-      qprintf($format, "Command", $command);
+      LogInfo(sprintf($format, "Command", $command));
       if ($host && $playpath && $auth)
           if ($windows)
               RunAsyncBatch($command, $filename);
@@ -554,39 +567,35 @@
 
   function ShowHeader($header)
     {
-      global $cli;
+      global $quiet;
       $len    = strlen($header);
       $width  = (int) ((80 - $len) / 2) + $len;
       $format = "\n%" . $width . "s\n\n";
-      if (!$cli->getParam('quiet'))
+      if (!$quiet)
           printf($format, $header);
-    }
-
-  function ci_uksort($a, $b)
-    {
-      $a = strtolower($a);
-      $b = strtolower($b);
-      return strnatcmp($a, $b);
-    }
-
-  function qecho($str)
-    {
-      global $cli;
-      if (!$cli->getParam('quiet'))
-          echo $str;
-    }
-
-  function qprintf($format, $param, $arg)
-    {
-      global $cli;
-      if (!$cli->getParam('quiet'))
-          printf($format, $param, $arg);
     }
 
   // Global code starts here
   $header        = "KSV PlayTV Downloader";
-  $format        = "%-8s: %s\n";
+  $format        = "%-8s: %s";
   $ChannelFormat = "%2d) %-22.21s";
+  $quiet         = false;
+
+  $options = array(
+      0 => array(
+          'help' => 'displays this help',
+          'list' => 'display formatted channels list and exit',
+          'print' => 'only print the base rtmpdump command, don\'t start anything',
+          'quiet' => 'disables unnecessary output'
+      ),
+      1 => array(
+          'proxy' => 'use proxy to retrieve channel information',
+          'url' => 'use specified url without displaying channels list'
+      )
+  );
+  $cli     = new CLI($options);
+  if ($cli->getParam('quiet'))
+      $quiet = true;
 
   strncasecmp(php_uname('s'), "Win", 3) == 0 ? $windows = true : $windows = false;
   if ($windows)
@@ -599,7 +608,6 @@
     }
   else
       $vlc = "vlc";
-  $cli   = new CLI();
   $cc    = new cURL();
   $xxtea = new Crypt_XXTEA();
 
@@ -624,7 +632,7 @@
       preg_match_all('/<a.*?data-channel="([^"]+).*?data-playerid="([^"]+)[^>]+>/i', $html, $links);
       for ($i = 0; $i < count($links[1]); $i++)
           $ChannelList[$links[1][$i]] = $links[2][$i];
-      uksort($ChannelList, 'ci_uksort');
+      uksort($ChannelList, 'strnatcasecmp');
 
       $FirstRun    = true;
       $KeepRunning = true;
@@ -635,7 +643,7 @@
           else
               ShowHeader($header);
           Display($ChannelList, $ChannelFormat, 3);
-          echo "Enter Channel Number : ";
+          printf("Enter Channel Number : ");
           $channel = trim(fgets(STDIN));
           if (is_numeric($channel) && ($channel >= 1) && ($channel <= count($ChannelList)))
             {

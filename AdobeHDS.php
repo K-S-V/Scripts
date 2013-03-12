@@ -13,38 +13,15 @@
 
   class CLI
     {
-      protected static $ACCEPTED = array(
-          0 => array(
-              'help'   => 'displays this help',
-              'debug'  => 'show debug output',
-              'delete' => 'delete fragments after processing',
-              'fproxy' => 'force proxy for downloading of fragments',
-              'play'   => 'dump stream to stdout for piping to media player',
-              'rename' => 'rename fragments sequentially before processing',
-              'update' => 'update the script to current git version'
-          ),
-          1 => array(
-              'auth'      => 'authentication string for fragment requests',
-              'duration'  => 'stop recording after specified number of seconds',
-              'filesize'  => 'split output file in chunks of specified size (MB)',
-              'fragments' => 'base filename for fragments',
-              'fixwindow' => 'timestamp gap between frames to consider as timeshift',
-              'manifest'  => 'manifest file for downloading of fragments',
-              'outdir'    => 'destination folder for output file',
-              'outfile'   => 'filename to use for output file',
-              'parallel'  => 'number of fragments to download simultaneously',
-              'proxy'     => 'proxy for downloading of manifest',
-              'quality'   => 'selected quality level (low|medium|high) or exact bitrate',
-              'referrer'  => 'Referer to use for emulation of browser requests',
-              'start'     => 'start from specified fragment',
-              'useragent' => 'User-Agent to use for emulation of browser requests'
-          )
-      );
+      protected static $ACCEPTED = array();
       var $params = array();
 
-      function __construct($handleUnknown = false)
+      function __construct($options = false, $handleUnknown = false)
         {
           global $argc, $argv;
+
+          if ($options !== false)
+              self::$ACCEPTED = $options;
 
           // Parse params
           if ($argc > 1)
@@ -53,10 +30,10 @@
               for ($i = 1; $i < $argc; $i++)
                 {
                   $arg      = $argv[$i];
-                  $isSwitch = preg_match('/^--/', $arg);
+                  $isSwitch = preg_match('/^-+/', $arg);
 
                   if ($isSwitch)
-                      $arg = preg_replace('/^--/', '', $arg);
+                      $arg = preg_replace('/^-+/', '', $arg);
 
                   if ($paramSwitch && $isSwitch)
                       $this->error("[param] expected after '$paramSwitch' switch (" . self::$ACCEPTED[1][$paramSwitch] . ')');
@@ -1602,11 +1579,39 @@
   $start        = 0;
   $update       = false;
 
+  $options = array(
+      0 => array(
+          'help' => 'displays this help',
+          'debug' => 'show debug output',
+          'delete' => 'delete fragments after processing',
+          'fproxy' => 'force proxy for downloading of fragments',
+          'play' => 'dump stream to stdout for piping to media player',
+          'rename' => 'rename fragments sequentially before processing',
+          'update' => 'update the script to current git version'
+      ),
+      1 => array(
+          'auth' => 'authentication string for fragment requests',
+          'duration' => 'stop recording after specified number of seconds',
+          'filesize' => 'split output file in chunks of specified size (MB)',
+          'fragments' => 'base filename for fragments',
+          'fixwindow' => 'timestamp gap between frames to consider as timeshift',
+          'manifest' => 'manifest file for downloading of fragments',
+          'outdir' => 'destination folder for output file',
+          'outfile' => 'filename to use for output file',
+          'parallel' => 'number of fragments to download simultaneously',
+          'proxy' => 'proxy for downloading of manifest',
+          'quality' => 'selected quality level (low|medium|high) or exact bitrate',
+          'referrer' => 'Referer to use for emulation of browser requests',
+          'start' => 'start from specified fragment',
+          'useragent' => 'User-Agent to use for emulation of browser requests'
+      )
+  );
+  $cli     = new CLI($options, true);
+
   // Set large enough memory limit
   ini_set("memory_limit", "512M");
 
   // Check if STDOUT is available
-  $cli = new CLI(true);
   if ($cli->getParam('play'))
     {
       $play       = true;

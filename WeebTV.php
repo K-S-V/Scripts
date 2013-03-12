@@ -1,23 +1,15 @@
 <?php
   class CLI
     {
-      protected static $ACCEPTED = array(
-          0 => array(
-              'help'  => 'displays this help',
-              'list'  => 'display formatted channels list and exit',
-              'print' => 'only print the base rtmpdump command, don\'t start anything',
-              'quiet' => 'disables unnecessary output'
-          ),
-          1 => array(
-              'proxy' => 'use proxy to retrieve channel information',
-              'url'   => 'use specified url without displaying channels list'
-          )
-      );
+      protected static $ACCEPTED = array();
       var $params = array();
 
-      function __construct($handleUnknown = false)
+      function __construct($options = false, $handleUnknown = false)
         {
           global $argc, $argv;
+
+          if ($options !== false)
+              self::$ACCEPTED = $options;
 
           // Parse params
           if ($argc > 1)
@@ -26,10 +18,10 @@
               for ($i = 1; $i < $argc; $i++)
                 {
                   $arg      = $argv[$i];
-                  $isSwitch = preg_match('/^--/', $arg);
+                  $isSwitch = preg_match('/^-+/', $arg);
 
                   if ($isSwitch)
-                      $arg = preg_replace('/^--/', '', $arg);
+                      $arg = preg_replace('/^-+/', '', $arg);
 
                   if ($paramSwitch && $isSwitch)
                       $this->error("[param] expected after '$paramSwitch' switch (" . self::$ACCEPTED[1][$paramSwitch] . ')');
@@ -221,7 +213,7 @@
     {
       global $cli, $windows;
       if ($message)
-          qecho($message . "\n");
+          LogInfo($message);
       if ($windows)
           exec("chcp 1252");
       if (!count($cli->params))
@@ -264,7 +256,7 @@
                       printf($format, $cell, KeyName($items, $cell - 1));
                 }
             }
-          echo "\n\n";
+          printf("\n\n");
         }
     }
 
@@ -286,6 +278,13 @@
           $logged_in = false;
     }
 
+  function LogInfo($msg, $progress = false)
+    {
+      global $quiet;
+      if (!$quiet)
+          PrintLine($msg, $progress);
+    }
+
   function LogOut()
     {
       global $cc, $logged_in;
@@ -294,6 +293,20 @@
           $cc->get("http://weeb.tv/account/logout");
           $logged_in = false;
         }
+    }
+
+  function PrintLine($msg, $progress = false)
+    {
+      if ($msg)
+        {
+          printf("\r%-79s\r", "");
+          if ($progress)
+              printf("%s\r", $msg);
+          else
+              printf("%s\n", $msg);
+        }
+      else
+          printf("\n");
     }
 
   function ReadSettings()
@@ -345,7 +358,7 @@
   function ShowChannel($url, $filename)
     {
       global $cc, $format, $password, $PremiumUser, $quality, $username, $vlc, $windows, $cli;
-      qecho("Retrieving html . . .\n");
+      LogInfo("Retrieving html....");
       $cc->headers = $cc->headers();
       $html        = $cc->get($url);
       preg_match('/flashvars.*?cid[^\d]+?(\d+)/is', $html, $cid);
@@ -406,10 +419,10 @@
           $token = $Params["73"];
       else
           Close("Server seems busy. please try after some time.");
-      qprintf($format, "RTMP Url", $rtmp);
-      qprintf($format, "Playpath", $playpath);
-      qprintf($format, "Token", $token);
-      qprintf($format, "Premium", $PremiumUser ? "Yes" : "No");
+      LogInfo(sprintf($format, "RTMP Url", $rtmp));
+      LogInfo(sprintf($format, "Playpath", $playpath));
+      LogInfo(sprintf($format, "Token", $token));
+      LogInfo(sprintf($format, "Premium", $PremiumUser ? "Yes" : "No"));
       if (($username != "") && ($password != ""))
           $token = "$token;$username;$password";
 
@@ -421,11 +434,11 @@
 
       if ($cli->getParam('print'))
         {
-          echo $basecmd;
+          printf($basecmd);
           exit(0);
         }
 
-      qprintf($format, "Command", $command);
+      LogInfo(sprintf($format, "Command", $command));
       if ($rtmp && $token)
           if ($windows)
               RunAsyncBatch($command, $filename);
@@ -435,39 +448,35 @@
 
   function ShowHeader($header)
     {
-      global $cli;
+      global $quiet;
       $len    = strlen($header);
       $width  = (int) ((80 - $len) / 2) + $len;
       $format = "\n%" . $width . "s\n\n";
-      if (!$cli->getParam('quiet'))
+      if (!$quiet)
           printf($format, $header);
-    }
-
-  function ci_uksort($a, $b)
-    {
-      $a = strtolower($a);
-      $b = strtolower($b);
-      return strnatcmp($a, $b);
-    }
-
-  function qecho($str)
-    {
-      global $cli;
-      if (!$cli->getParam('quiet'))
-          echo $str;
-    }
-
-  function qprintf($format, $param, $arg)
-    {
-      global $cli;
-      if (!$cli->getParam('quiet'))
-          printf($format, $param, $arg);
     }
 
   // Global code starts here
   $header        = "KSV WeebTV Downloader";
-  $format        = "%-8s: %s\n";
+  $format        = "%-8s: %s";
   $ChannelFormat = "%2d) %-22.21s";
+  $quiet         = false;
+
+  $options = array(
+      0 => array(
+          'help' => 'displays this help',
+          'list' => 'display formatted channels list and exit',
+          'print' => 'only print the base rtmpdump command, don\'t start anything',
+          'quiet' => 'disables unnecessary output'
+      ),
+      1 => array(
+          'proxy' => 'use proxy to retrieve channel information',
+          'url' => 'use specified url without displaying channels list'
+      )
+  );
+  $cli     = new CLI($options);
+  if ($cli->getParam('quiet'))
+      $quiet = true;
 
   strncasecmp(php_uname('s'), "Win", 3) == 0 ? $windows = true : $windows = false;
   if ($windows)
@@ -480,8 +489,7 @@
     }
   else
       $vlc = "vlc";
-  $cli = new CLI();
-  $cc  = new cURL();
+  $cc = new cURL();
 
   ShowHeader($header);
   if ($cli->getParam('help'))
@@ -519,7 +527,7 @@
           preg_match('/12px.*?<a href="([^"]+)"[^>]+>(.*?)<\/a>/i', $fieldSet, $channelVars);
           $ChannelList[$channelVars[2]] = $channelVars[1];
         }
-      uksort($ChannelList, 'ci_uksort');
+      uksort($ChannelList, 'strnatcasecmp');
 
       $FirstRun    = true;
       $KeepRunning = true;
@@ -530,7 +538,7 @@
           else
               ShowHeader($header);
           Display($ChannelList, $ChannelFormat, 3);
-          echo "Enter Channel Number : ";
+          printf("Enter Channel Number : ");
           $channel = trim(fgets(STDIN));
           if (is_numeric($channel) && ($channel >= 1) && ($channel <= count($ChannelList)))
             {

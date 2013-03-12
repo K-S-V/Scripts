@@ -13,23 +13,15 @@
 
   class CLI
     {
-      protected static $ACCEPTED = array(
-          0 => array(
-              'help'   => 'displays this help',
-              'debug'  => 'show debug output',
-              'nometa' => 'do not save metadata in repaired file'
-          ),
-          1 => array(
-              'fixwindow' => 'timestamp gap between frames to consider as timeshift',
-              'in'        => 'input filename of flv file to be repaired',
-              'out'       => 'output filename for repaired file'
-          )
-      );
+      protected static $ACCEPTED = array();
       var $params = array();
 
-      function __construct($handleUnknown = false)
+      function __construct($options = false, $handleUnknown = false)
         {
           global $argc, $argv;
+
+          if ($options !== false)
+              self::$ACCEPTED = $options;
 
           // Parse params
           if ($argc > 1)
@@ -38,10 +30,10 @@
               for ($i = 1; $i < $argc; $i++)
                 {
                   $arg      = $argv[$i];
-                  $isSwitch = preg_match('/^--/', $arg);
+                  $isSwitch = preg_match('/^-+/', $arg);
 
                   if ($isSwitch)
-                      $arg = preg_replace('/^--/', '', $arg);
+                      $arg = preg_replace('/^-+/', '', $arg);
 
                   if ($paramSwitch && $isSwitch)
                       $this->error("[param] expected after '$paramSwitch' switch (" . self::$ACCEPTED[1][$paramSwitch] . ')');
@@ -185,7 +177,20 @@
   $AVC_HeaderWritten = false;
   $AAC_HeaderWritten = false;
 
-  $cli = new CLI();
+  $options = array(
+      0 => array(
+          'help' => 'displays this help',
+          'debug' => 'show debug output',
+          'nometa' => 'do not save metadata in repaired file'
+      ),
+      1 => array(
+          'fixwindow' => 'timestamp gap between frames to consider as timeshift',
+          'in' => 'input filename of flv file to be repaired',
+          'out' => 'output filename for repaired file'
+      )
+  );
+  $cli     = new CLI($options);
+
   if ($cli->getParam('help'))
     {
       $cli->displayHelp();
