@@ -144,8 +144,9 @@
           fwrite(STDERR, $msg . "\n");
     }
 
-  function ShowHeader($header)
+  function ShowHeader()
     {
+      $header = "KSV FLV Fixer";
       $len    = strlen($header);
       $width  = (int) ((80 - $len) / 2) + $len;
       $format = "\n%" . $width . "s\n\n";
@@ -153,7 +154,6 @@
     }
 
   // Global code starts here
-  ShowHeader("KSV FLV Fixer");
   $flvHeader         = pack("H*", "464c5601050000000900000000");
   $flvHeaderLen      = strlen($flvHeader);
   $format            = " %-8s%-16s%-16s%-8s";
@@ -177,6 +177,7 @@
   $AVC_HeaderWritten = false;
   $AAC_HeaderWritten = false;
 
+  ShowHeader();
   $options = array(
       0 => array(
           'help' => 'displays this help',

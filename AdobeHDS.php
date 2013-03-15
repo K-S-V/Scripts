@@ -10,6 +10,7 @@
   define('AVC_SEQUENCE_END', 0x02);
   define('FRAMEFIX_STEP', 40);
   define('INVALID_TIMESTAMP', -1);
+  define('STOP_PROCESSING', 2);
 
   class CLI
     {
@@ -748,8 +749,9 @@
           if (substr($this->baseFilename, -1) == '/')
               $this->baseFilename = substr($this->baseFilename, 0, -1);
           $this->baseFilename = RemoveExtension($this->baseFilename);
-          if (strrpos($this->baseFilename, '/'))
-              $this->baseFilename = substr($this->baseFilename, strrpos($this->baseFilename, '/') + 1);
+          $lastSlash          = strrpos($this->baseFilename, '/');
+          if ($lastSlash !== false)
+              $this->baseFilename = substr($this->baseFilename, $lastSlash + 1);
           if (strpos($manifest, '?'))
               $this->baseFilename = md5(substr($manifest, 0, strpos($manifest, '?'))) . '_' . $this->baseFilename;
           else
@@ -802,7 +804,7 @@
                     }
                   if (isset($frag['response']))
                     {
-                      if ($this->WriteFragment($frag, $opt) === 2)
+                      if ($this->WriteFragment($frag, $opt) === STOP_PROCESSING)
                           break 2;
                       else
                           continue;
@@ -866,7 +868,7 @@
                           if ($this->live and ($i + 1 == count($downloads)) and !$cc->active)
                             {
                               LogDebug("Trying to resync with latest available fragment");
-                              if ($this->WriteFragment($frag, $opt) === 2)
+                              if ($this->WriteFragment($frag, $opt) === STOP_PROCESSING)
                                   break 2;
                               unset($frag['response']);
                               $this->UpdateBootstrapInfo($cc, $this->bootstrapUrl);
@@ -875,7 +877,7 @@
                             }
                         }
                       if (isset($frag['response']))
-                          if ($this->WriteFragment($frag, $opt) === 2)
+                          if ($this->WriteFragment($frag, $opt) === STOP_PROCESSING)
                               break 2;
                     }
                   unset($downloads, $download);
@@ -1224,16 +1226,16 @@
                           else if ($this->outFile)
                             {
                               if ($opt['filesize'])
-                                  $outFile = $this->outDir . $this->outFile . '-' . $this->fileCount++ . ".flv";
+                                  $outFile = JoinUrl($this->outDir, $this->outFile . '-' . $this->fileCount++ . ".flv");
                               else
-                                  $outFile = $this->outDir . $this->outFile . ".flv";
+                                  $outFile = JoinUrl($this->outDir, $this->outFile . ".flv");
                             }
                           else
                             {
                               if ($opt['filesize'])
-                                  $outFile = $this->outDir . $this->baseFilename . '-' . $this->fileCount++ . ".flv";
+                                  $outFile = JoinUrl($this->outDir, $this->baseFilename . '-' . $this->fileCount++ . ".flv");
                               else
-                                  $outFile = $this->outDir . $this->baseFilename . ".flv";
+                                  $outFile = JoinUrl($this->outDir, $this->baseFilename . ".flv");
                             }
                           $this->InitDecoder();
                           $this->DecodeFragment($frag['response'], $frag['id'], $opt);
@@ -1269,7 +1271,7 @@
                 {
                   LogInfo("");
                   LogInfo(($opt['duration'] + $this->duration) . " seconds of content has been recorded successfully.", true);
-                  return 2;
+                  return STOP_PROCESSING;
                 }
               if ($opt['filesize'] and ($this->filesize >= $opt['filesize']))
                 {
@@ -1396,11 +1398,18 @@
 
   function JoinUrl($firstUrl, $secondUrl)
     {
-      if ($firstUrl and (substr($firstUrl, -1) == '/'))
-          $firstUrl = substr($firstUrl, 0, -1);
-      if ($secondUrl and (substr($secondUrl, 0, 1) == '/'))
-          $secondUrl = substr($secondUrl, 1);
-      return $firstUrl . '/' . $secondUrl;
+      if ($firstUrl and $secondUrl)
+        {
+          if (substr($firstUrl, -1) == '/')
+              $firstUrl = substr($firstUrl, 0, -1);
+          if (substr($secondUrl, 0, 1) == '/')
+              $secondUrl = substr($secondUrl, 1);
+          return $firstUrl . '/' . $secondUrl;
+        }
+      else if ($firstUrl)
+          return $firstUrl;
+      else
+          return $secondUrl;
     }
 
   function KeyName(array $a, $pos)
@@ -1411,14 +1420,14 @@
 
   function LogDebug($msg, $display = true)
     {
-      global $debug, $logfile, $showHeader;
+      global $debug, $showHeader;
       if ($showHeader)
         {
           ShowHeader();
           $showHeader = false;
         }
       if ($display and $debug)
-          fwrite($logfile, $msg . "\n");
+          fwrite(STDERR, $msg . "\n");
     }
 
   function LogError($msg, $code = 1)
@@ -1429,7 +1438,12 @@
 
   function LogInfo($msg, $progress = false)
     {
-      global $quiet;
+      global $quiet, $showHeader;
+      if ($showHeader)
+        {
+          ShowHeader();
+          $showHeader = false;
+        }
       if (!$quiet)
           PrintLine($msg, $progress);
     }
@@ -1459,12 +1473,6 @@
 
   function PrintLine($msg, $progress = false)
     {
-      global $showHeader;
-      if ($showHeader)
-        {
-          ShowHeader();
-          $showHeader = false;
-        }
       if ($msg)
         {
           printf("\r%-79s\r", "");
@@ -1567,7 +1575,6 @@
   $fixWindow    = 1000;
   $fragCount    = 0;
   $fragNum      = 0;
-  $logfile      = STDERR;
   $manifest     = "";
   $outDir       = "";
   $outFile      = "";
@@ -1714,8 +1721,6 @@
   if ($outDir)
     {
       $outDir = rtrim(str_replace('\\', '/', $outDir));
-      if (substr($outDir, -1) != '/')
-          $outDir = $outDir . '/';
       if (!file_exists($outDir))
         {
           LogDebug("Creating destination directory " . $outDir);

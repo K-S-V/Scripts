@@ -446,18 +446,16 @@
               exec($command);
     }
 
-  function ShowHeader($header)
+  function ShowHeader()
     {
-      global $quiet;
+      $header = "KSV WeebTV Downloader";
       $len    = strlen($header);
       $width  = (int) ((80 - $len) / 2) + $len;
       $format = "\n%" . $width . "s\n\n";
-      if (!$quiet)
-          printf($format, $header);
+      printf($format, $header);
     }
 
   // Global code starts here
-  $header        = "KSV WeebTV Downloader";
   $format        = "%-8s: %s";
   $ChannelFormat = "%2d) %-22.21s";
   $quiet         = false;
@@ -477,6 +475,8 @@
   $cli     = new CLI($options);
   if ($cli->getParam('quiet'))
       $quiet = true;
+  if (!$quiet)
+      ShowHeader();
 
   strncasecmp(php_uname('s'), "Win", 3) == 0 ? $windows = true : $windows = false;
   if ($windows)
@@ -491,7 +491,6 @@
       $vlc = "vlc";
   $cc = new cURL();
 
-  ShowHeader($header);
   if ($cli->getParam('help'))
     {
       $cli->displayHelp();
@@ -536,7 +535,7 @@
           if ($FirstRun)
               $FirstRun = false;
           else
-              ShowHeader($header);
+              ShowHeader();
           Display($ChannelList, $ChannelFormat, 3);
           printf("Enter Channel Number : ");
           $channel = trim(fgets(STDIN));
