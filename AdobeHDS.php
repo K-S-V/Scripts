@@ -484,7 +484,7 @@
                       $bootstrapUrl = GetString($bootstrap[0]['url']);
                       if (!isHttpUrl($bootstrapUrl))
                           $bootstrapUrl = JoinUrl($mediaEntry['baseUrl'], $bootstrapUrl);
-                      $mediaEntry['bootstrapUrl'] = NormalizePath($bootstrapUrl);
+                      $mediaEntry['bootstrapUrl'] = NormalizePath($bootstrapUrl) . $this->auth;
                       if ($cc->get($mediaEntry['bootstrapUrl']) != 200)
                           LogError("Failed to get bootstrap info");
                       $mediaEntry['bootstrap'] = $cc->response;
@@ -682,7 +682,7 @@
               $qualitySegmentUrlModifiers[$i] = ReadString($afrt, $pos);
           $fragEntries = ReadInt32($afrt, $pos);
           $pos += 4;
-          LogDebug(sprintf("%s:\n\n %-8s%-16s%-16s%-16s", "Fragment Entries", "Number", "Timestamp", "Duration", "Discontinuity"));
+          LogDebug(sprintf("%s:\n\n %-12s%-16s%-16s%-16s", "Fragment Entries", "Number", "Timestamp", "Duration", "Discontinuity"));
           for ($i = 0; $i < $fragEntries; $i++)
             {
               $firstFragment = ReadInt32($afrt, $pos);
@@ -697,7 +697,7 @@
             }
           unset($fragEntry);
           foreach ($this->fragTable as $fragEntry)
-              LogDebug(sprintf(" %-8s%-16s%-16s%-16s", $fragEntry['firstFragment'], $fragEntry['firstFragmentTimestamp'], $fragEntry['fragmentDuration'], $fragEntry['discontinuityIndicator']));
+              LogDebug(sprintf(" %-12s%-16s%-16s%-16s", $fragEntry['firstFragment'], $fragEntry['firstFragmentTimestamp'], $fragEntry['fragmentDuration'], $fragEntry['discontinuityIndicator']));
           LogDebug("");
 
           // Use fragment table in case of single segment
@@ -865,7 +865,7 @@
                           /* Resync with latest available fragment when we are left behind due to */
                           /* slow connection and short live window on streaming server. make sure */
                           /* to reset the last written fragment.                                  */
-                          if ($this->live and ($i + 1 == count($downloads)) and !$cc->active)
+                          if ($this->live and ($fragNum >= $this->fragCount) and ($i + 1 == count($downloads)) and !$cc->active)
                             {
                               LogDebug("Trying to resync with latest available fragment");
                               if ($this->WriteFragment($frag, $opt) === STOP_PROCESSING)
