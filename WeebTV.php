@@ -77,7 +77,7 @@
           if (isset($this->params[$name]))
               return $this->params[$name];
           else
-              return "";
+              return false;
         }
     }
 

@@ -89,7 +89,7 @@
           if (isset($this->params[$name]))
               return $this->params[$name];
           else
-              return "";
+              return false;
         }
     }
 
@@ -368,11 +368,12 @@
       function InitDecoder()
         {
           $this->audio             = false;
-          $this->baseTS            = INVALID_TIMESTAMP;
           $this->filesize          = 0;
           $this->video             = false;
           $this->prevTagSize       = 4;
           $this->tagHeaderLen      = 11;
+          $this->baseTS            = INVALID_TIMESTAMP;
+          $this->negTS             = INVALID_TIMESTAMP;
           $this->prevAudioTS       = INVALID_TIMESTAMP;
           $this->prevVideoTS       = INVALID_TIMESTAMP;
           $this->pAudioTagLen      = 0;
@@ -1020,6 +1021,7 @@
               // Try to fix the odd timestamps and make them zero based
               $currentTS = $packetTS;
               $lastTS    = $this->prevVideoTS >= $this->prevAudioTS ? $this->prevVideoTS : $this->prevAudioTS;
+              $fixedTS   = $lastTS + FRAMEFIX_STEP;
               if (($this->baseTS == INVALID_TIMESTAMP) and (($packetType == AUDIO) or ($packetType == VIDEO)))
                   $this->baseTS = $packetTS;
               if ($this->baseTS > 1000)
@@ -1027,15 +1029,42 @@
                   if ($packetTS >= $this->baseTS)
                       $packetTS -= $this->baseTS;
                   else
-                      $packetTS = $lastTS + FRAMEFIX_STEP;
+                      $packetTS = $fixedTS;
                 }
               if ($lastTS != INVALID_TIMESTAMP)
                 {
                   $timeShift = $packetTS - $lastTS;
                   if ($timeShift > $this->fixWindow)
                     {
+                      LogDebug("Timestamp gap detected: PacketTS=" . $packetTS . " LastTS=" . $lastTS . " Timeshift=" . $timeShift, $debug);
                       $this->baseTS += $timeShift - FRAMEFIX_STEP;
-                      $packetTS = $lastTS + FRAMEFIX_STEP;
+                      $packetTS = $fixedTS;
+                    }
+                  else
+                    {
+                      $lastTS = $packetType == VIDEO ? $this->prevVideoTS : $this->prevAudioTS;
+                      if ($packetTS < ($lastTS - $this->fixWindow))
+                        {
+                          if (($this->negTS != INVALID_TIMESTAMP) and (($packetTS + $this->negTS) < ($lastTS - $this->fixWindow)))
+                              $this->negTS = INVALID_TIMESTAMP;
+                          if ($this->negTS == INVALID_TIMESTAMP)
+                            {
+                              $this->negTS = $fixedTS - $packetTS;
+                              LogDebug("Negative timestamp detected: PacketTS=" . $packetTS . " LastTS=" . $lastTS . " NegativeTS=" . $this->negTS, $debug);
+                              $packetTS = $fixedTS;
+                            }
+                          else
+                            {
+                              if (($packetTS + $this->negTS) <= ($lastTS + $this->fixWindow))
+                                  $packetTS += $this->negTS;
+                              else
+                                {
+                                  $this->negTS = $fixedTS - $packetTS;
+                                  LogDebug("Negative timestamp override: PacketTS=" . $packetTS . " LastTS=" . $lastTS . " NegativeTS=" . $this->negTS, $debug);
+                                  $packetTS = $fixedTS;
+                                }
+                            }
+                        }
                     }
                 }
               if ($packetTS != $currentTS)

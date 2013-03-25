@@ -89,7 +89,7 @@
           if (isset($this->params[$name]))
               return $this->params[$name];
           else
-              return "";
+              return false;
         }
     }
 
@@ -246,6 +246,7 @@
       // Try to fix the odd timestamps and make them zero based
       $currentTS = $packetTS;
       $lastTS    = $prevVideoTS >= $prevAudioTS ? $prevVideoTS : $prevAudioTS;
+      $fixedTS   = $lastTS + FRAMEFIX_STEP;
       if (($baseTS == INVALID_TIMESTAMP) and (($packetType == AUDIO) or ($packetType == VIDEO)))
           $baseTS = $packetTS;
       if ($baseTS > 1000)
@@ -253,28 +254,42 @@
           if ($packetTS >= $baseTS)
               $packetTS -= $baseTS;
           else
-              $packetTS = $lastTS + FRAMEFIX_STEP;
+              $packetTS = $fixedTS;
         }
       if ($lastTS != INVALID_TIMESTAMP)
         {
           $timeShift = $packetTS - $lastTS;
           if ($timeShift > $fixWindow)
             {
+              LogDebug("Timestamp gap detected: PacketTS=" . $packetTS . " LastTS=" . $lastTS . " Timeshift=" . $timeShift);
               $baseTS += $timeShift - FRAMEFIX_STEP;
-              $packetTS = $lastTS + FRAMEFIX_STEP;
+              $packetTS = $fixedTS;
             }
-          else if ($packetTS < ($lastTS - $fixWindow))
+          else
             {
-              if (($negTS != INVALID_TIMESTAMP) and (($packetTS + $negTS) < ($lastTS - $fixWindow)))
-                  $negTS = INVALID_TIMESTAMP;
-              if ($negTS == INVALID_TIMESTAMP)
+              $lastTS = $packetType == VIDEO ? $prevVideoTS : $prevAudioTS;
+              if ($packetTS < ($lastTS - $fixWindow))
                 {
-                  $fixedTS  = $lastTS + FRAMEFIX_STEP;
-                  $negTS    = $fixedTS - $packetTS;
-                  $packetTS = $fixedTS;
+                  if (($negTS != INVALID_TIMESTAMP) and (($packetTS + $negTS) < ($lastTS - $fixWindow)))
+                      $negTS = INVALID_TIMESTAMP;
+                  if ($negTS == INVALID_TIMESTAMP)
+                    {
+                      $negTS = $fixedTS - $packetTS;
+                      LogDebug("Negative timestamp detected: PacketTS=" . $packetTS . " LastTS=" . $lastTS . " NegativeTS=" . $negTS);
+                      $packetTS = $fixedTS;
+                    }
+                  else
+                    {
+                      if (($packetTS + $negTS) <= ($lastTS + $fixWindow))
+                          $packetTS += $negTS;
+                      else
+                        {
+                          $negTS = $fixedTS - $packetTS;
+                          LogDebug("Negative timestamp override: PacketTS=" . $packetTS . " LastTS=" . $lastTS . " NegativeTS=" . $negTS);
+                          $packetTS = $fixedTS;
+                        }
+                    }
                 }
-              else
-                  $packetTS += $negTS;
             }
         }
       if ($packetTS != $currentTS)
