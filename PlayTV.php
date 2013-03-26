@@ -492,16 +492,18 @@
       $api_url    = $params->{'u'};
 
       // Generate parameter request
-      $request       = json_encode(array(
+      $request = json_encode(array(
           'i' => $channel_id,
           't' => $timestamp,
           'h' => 'playtv.fr',
           'a' => 5
       ));
-      $request       = unpack("H*", $xxtea->encrypt($request));
-      $request       = $request[1];
-      $cc->headers[] = "Referer: http://static.playtv.fr/swf/tvplayer.swf?r=18";
-      $cc->headers[] = "x-flash-version: 11,4,402,265";
+      $request = unpack("H*", $xxtea->encrypt($request));
+      $request = $request[1];
+      if (substr($request, -1) != '/')
+          $request .= '/';
+      $cc->headers[] = "Referer: http://static.playtv.fr/swf/tvplayer.swf?r=22";
+      $cc->headers[] = "x-flash-version: 11,6,602,180";
       $response      = $cc->get($api_url . $request);
 
       // Decode server response
