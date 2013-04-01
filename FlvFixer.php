@@ -148,7 +148,7 @@
     {
       $header = "KSV FLV Fixer";
       $len    = strlen($header);
-      $width  = (int) ((80 - $len) / 2) + $len;
+      $width  = floor((80 - $len) / 2) + $len;
       $format = "\n%" . $width . "s\n\n";
       printf($format, $header);
     }
@@ -432,7 +432,7 @@
               break;
       }
       $filePos += $totalTagLen;
-      $cFilePos = (int) ($filePos / (1024 * 1024));
+      $cFilePos = floor($filePos / (1024 * 1024));
       if ($cFilePos > $pFilePos)
         {
           printf("Processed %d/%.2f MB\r", $cFilePos, $fileSize);

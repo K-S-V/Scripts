@@ -450,7 +450,7 @@
     {
       $header = "KSV WeebTV Downloader";
       $len    = strlen($header);
-      $width  = (int) ((80 - $len) / 2) + $len;
+      $width  = floor((80 - $len) / 2) + $len;
       $format = "\n%" . $width . "s\n\n";
       printf($format, $header);
     }

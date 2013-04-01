@@ -424,7 +424,7 @@
             {
               foreach ($url as $manifest)
                 {
-                  $bitrate = (int) $manifest['bitrate'];
+                  $bitrate = floor(GetString($manifest['bitrate']));
                   $entry =& $manifests[$bitrate];
                   $entry['bitrate'] = $bitrate;
                   $href             = GetString($manifest['href']);
@@ -467,7 +467,7 @@
                   $array['metadata'] = GetString($stream->{'metadata'});
                   $stream            = $array;
 
-                  $bitrate  = isset($stream['bitrate']) ? (int) $stream['bitrate'] : $manifest['bitrate'];
+                  $bitrate  = isset($stream['bitrate']) ? floor($stream['bitrate']) : $manifest['bitrate'];
                   $streamId = isset($stream[strtolower('streamId')]) ? $stream[strtolower('streamId')] : "";
                   $mediaEntry =& $this->media[$bitrate];
 
@@ -732,11 +732,12 @@
           $fragNum = $this->fragStart;
           if ($start)
             {
-              if ($segNum > 1)
+              if (count($this->segTable) > 1)
+                {
+                  $segNum = floor($start / $this->fragsPerSeg);
                   if ($start % $this->fragsPerSeg)
-                      $segNum = (int) ($start / $this->fragsPerSeg + 1);
-                  else
-                      $segNum = (int) ($start / $this->fragsPerSeg);
+                      $segNum += 1;
+                }
               $fragNum         = $start - 1;
               $this->segStart  = $segNum;
               $this->fragStart = $fragNum;
@@ -1404,9 +1405,9 @@
         }
     }
 
-  function GetString($xmlObject)
+  function GetString($object)
     {
-      return trim((string) $xmlObject);
+      return trim(strval($object));
     }
 
   function isHttpUrl($url)
@@ -1530,7 +1531,7 @@
     {
       $header = "KSV Adobe HDS Downloader";
       $len    = strlen($header);
-      $width  = (int) ((80 - $len) / 2) + $len;
+      $width  = floor((80 - $len) / 2) + $len;
       $format = "\n%" . $width . "s\n\n";
       printf($format, $header);
     }
