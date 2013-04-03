@@ -331,7 +331,7 @@
       var $audio, $auth, $baseFilename, $baseTS, $bootstrapUrl, $baseUrl, $debug, $duration, $fileCount, $filesize;
       var $fixWindow, $format, $live, $media, $outDir, $outFile, $parallel, $play, $processed, $quality, $rename, $video;
       var $prevTagSize, $tagHeaderLen;
-      var $segTable, $fragTable, $segNum, $fragNum, $frags, $fragCount, $fragsPerSeg, $lastFrag, $fragUrl, $discontinuity;
+      var $segTable, $fragTable, $segNum, $fragNum, $frags, $fragCount, $lastFrag, $fragUrl, $discontinuity;
       var $prevAudioTS, $prevVideoTS, $pAudioTagLen, $pVideoTagLen, $pAudioTagPos, $pVideoTagPos;
       var $prevAVC_Header, $prevAAC_Header, $AVC_HeaderWritten, $AAC_HeaderWritten;
 
@@ -359,7 +359,6 @@
           $this->fragStart     = false;
           $this->frags         = array();
           $this->fragCount     = 0;
-          $this->fragsPerSeg   = 0;
           $this->lastFrag      = 0;
           $this->discontinuity = "";
           $this->InitDecoder();
@@ -595,7 +594,12 @@
           $profile          = ($byte & 0xC0) >> 6;
           if (($byte & 0x20) >> 5)
               $this->live = true;
-          $update              = ($byte & 0x10) >> 4;
+          $update = ($byte & 0x10) >> 4;
+          if (!$update)
+            {
+              $this->segTable  = array();
+              $this->fragTable = array();
+            }
           $timescale           = ReadInt32($bootstrapInfo, $pos + 9);
           $currentMediaTime    = ReadInt64($bootstrapInfo, $pos + 13);
           $smpteTimeCodeOffset = ReadInt64($bootstrapInfo, $pos + 21);
@@ -625,6 +629,7 @@
                   $this->ParseAfrtBox($bootstrapInfo, $pos);
               $pos += $boxSize;
             }
+          $this->ParseSegAndFragTable();
         }
 
       function ParseAsrtBox($asrt, $pos)
@@ -652,24 +657,6 @@
           foreach ($this->segTable as $segEntry)
               LogDebug(sprintf(" %-8s%-10s", $segEntry['firstSegment'], $segEntry['fragmentsPerSegment']));
           LogDebug("");
-          $lastSegment = end($this->segTable);
-          if ($this->segStart === false)
-              $this->segStart = $lastSegment['firstSegment'];
-          $this->fragCount = $lastSegment['fragmentsPerSegment'];
-
-          // Use segment table in case of multiple segments
-          if (count($this->segTable) > 1)
-            {
-              $secondLastSegment = prev($this->segTable);
-              if ($this->fragStart === false)
-                {
-                  $this->fragsPerSeg = $secondLastSegment['fragmentsPerSegment'];
-                  $this->fragStart   = $secondLastSegment['firstSegment'] * $this->fragsPerSeg + $this->fragCount - 2;
-                  $this->fragCount   = $secondLastSegment['firstSegment'] * $this->fragsPerSeg + $this->fragCount;
-                }
-              else
-                  $this->fragCount = $secondLastSegment['firstSegment'] * $this->fragsPerSeg + $this->fragCount;
-            }
         }
 
       function ParseAfrtBox($afrt, $pos)
@@ -700,26 +687,82 @@
           foreach ($this->fragTable as $fragEntry)
               LogDebug(sprintf(" %-12s%-16s%-16s%-16s", $fragEntry['firstFragment'], $fragEntry['firstFragmentTimestamp'], $fragEntry['fragmentDuration'], $fragEntry['discontinuityIndicator']));
           LogDebug("");
+        }
 
-          // Use fragment table in case of single segment
-          if (count($this->segTable) == 1)
+      function ParseSegAndFragTable()
+        {
+          $firstSegment  = reset($this->segTable);
+          $lastSegment   = end($this->segTable);
+          $firstFragment = reset($this->fragTable);
+          $lastFragment  = end($this->fragTable);
+
+          // Check if live stream is still live
+          if (($lastFragment['firstFragment'] == 0) and ($lastFragment['fragmentDuration'] == 0))
             {
-              $firstFragment = reset($this->fragTable);
-              $lastFragment  = end($this->fragTable);
-              if ($this->fragStart === false)
-                {
-                  if ($this->live)
-                      $this->fragStart = $lastFragment['firstFragment'] - 2;
-                  else
-                      $this->fragStart = $firstFragment['firstFragment'] - 1;
-                  if ($this->fragStart < 0)
-                      $this->fragStart = 0;
-                }
-              if ($this->fragCount > 0)
-                  $this->fragCount += $firstFragment['firstFragment'] - 1;
-              if ($this->fragCount < $lastFragment['firstFragment'])
-                  $this->fragCount = $lastFragment['firstFragment'];
+              $this->live   = false;
+              $lastFragment = prev($this->fragTable);
             }
+
+          // Count total fragments by adding all entries in compactly coded segment table
+          $prev            = reset($this->segTable);
+          $this->fragCount = $prev['fragmentsPerSegment'];
+          while ($current = next($this->segTable))
+            {
+              $this->fragCount += ($current['firstSegment'] - $prev['firstSegment'] - 1) * $prev['fragmentsPerSegment'];
+              $this->fragCount += $current['fragmentsPerSegment'];
+              $prev = $current;
+            }
+          if ($this->fragCount > 0)
+              $this->fragCount += $firstFragment['firstFragment'] - 1;
+          if ($this->fragCount < $lastFragment['firstFragment'])
+              $this->fragCount = $lastFragment['firstFragment'];
+
+          // Determine starting segment and fragment
+          if ($this->segStart === false)
+            {
+              if ($this->live)
+                  $this->segStart = $lastSegment['firstSegment'];
+              else
+                  $this->segStart = $firstSegment['firstSegment'];
+            }
+          if ($this->fragStart === false)
+            {
+              if ($this->live)
+                  $this->fragStart = $this->fragCount - 2;
+              else
+                  $this->fragStart = $firstFragment['firstFragment'] - 1;
+              if ($this->fragStart < 0)
+                  $this->fragStart = 0;
+            }
+        }
+
+      function GetSegmentFromFragment($fragNum)
+        {
+          $firstSegment  = reset($this->segTable);
+          $lastSegment   = end($this->segTable);
+          $firstFragment = reset($this->fragTable);
+          $lastFragment  = end($this->fragTable);
+
+          if (count($this->segTable) == 1)
+              return $firstSegment['firstSegment'];
+          else
+            {
+              $prev  = $firstSegment['firstSegment'];
+              $start = $firstFragment['firstFragment'];
+              for ($i = $firstSegment['firstSegment']; $i <= $lastSegment['firstSegment']; $i++)
+                {
+                  if (isset($this->segTable[$i]))
+                      $seg = $this->segTable[$i];
+                  else
+                      $seg = $prev;
+                  $end = $start + $seg['fragmentsPerSegment'];
+                  if (($fragNum >= $start) and ($fragNum < $end))
+                      return $i;
+                  $prev  = $seg;
+                  $start = $end;
+                }
+            }
+          return $lastSegment['firstSegment'];
         }
 
       function DownloadFragments($cc, $manifest, $opt = array())
@@ -732,12 +775,7 @@
           $fragNum = $this->fragStart;
           if ($start)
             {
-              if (count($this->segTable) > 1)
-                {
-                  $segNum = floor($start / $this->fragsPerSeg);
-                  if ($start % $this->fragsPerSeg)
-                      $segNum += 1;
-                }
+              $segNum          = $this->GetSegmentFromFragment($start);
               $fragNum         = $start - 1;
               $this->segStart  = $segNum;
               $this->fragStart = $fragNum;
@@ -783,17 +821,18 @@
                       $this->discontinuity = value_in_array_field($fragNum, "firstFragment", "discontinuityIndicator", $this->fragTable, true);
                   else
                     {
-                      $closest = 1;
-                      foreach ($this->fragTable as $item)
+                      $closest = reset($this->fragTable);
+                      $closest = $closest['firstFragment'];
+                      while ($current = next($this->fragTable))
                         {
-                          if ($item['firstFragment'] < $fragNum)
-                              $closest = $item['firstFragment'];
+                          if ($current['firstFragment'] < $fragNum)
+                              $closest = $current['firstFragment'];
                           else
                               break;
                         }
                       $this->discontinuity = value_in_array_field($closest, "firstFragment", "discontinuityIndicator", $this->fragTable, true);
                     }
-                  if (($this->discontinuity == 1) or ($this->discontinuity == 3))
+                  if ($this->discontinuity)
                     {
                       LogDebug("Skipping fragment $fragNum due to discontinuity");
                       $frag['response'] = false;
@@ -812,17 +851,8 @@
                           continue;
                     }
 
-                  /* Increase or decrease segment number if current fragment is not available */
-                  /* in selected segment range                                                */
-                  if (count($this->segTable) > 1)
-                    {
-                      if ($fragNum > ($segNum * $this->fragsPerSeg))
-                          $segNum++;
-                      else if ($fragNum <= (($segNum - 1) * $this->fragsPerSeg))
-                          $segNum--;
-                    }
-
                   LogDebug("Adding fragment $fragNum to download queue");
+                  $segNum = $this->GetSegmentFromFragment($fragNum);
                   $cc->addDownload($this->fragUrl . "Seg" . $segNum . "-Frag" . $fragNum . $this->auth, $fragNum);
                 }
 
