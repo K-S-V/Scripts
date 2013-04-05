@@ -270,26 +270,38 @@
                   foreach ($this->ch as $download)
                       if ($download['ch'] == $info['handle'])
                           break;
-                  $info         = curl_getinfo($download['ch']);
                   $array['id']  = $download['id'];
                   $array['url'] = $download['url'];
-                  if ($info['http_code'] == 200)
+                  $info         = curl_getinfo($download['ch']);
+                  if ($info['http_code'] == 0)
                     {
-                      if ($info['size_download'] >= $info['download_content_length'])
+                      /* if curl fails due to network connectivity issues or some other reason it's *
+                       * better to add some delay before next try to avoid busy loop.               */
+                      LogDebug("Fragment " . $download['id'] . ": " . curl_error($download['ch']));
+                      usleep(1000000);
+                      $array['status']   = false;
+                      $array['response'] = "";
+                    }
+                  else
+                    {
+                      if ($info['http_code'] == 200)
+                        {
+                          if ($info['size_download'] >= $info['download_content_length'])
+                            {
+                              $array['status']   = $info['http_code'];
+                              $array['response'] = curl_multi_getcontent($download['ch']);
+                            }
+                          else
+                            {
+                              $array['status']   = false;
+                              $array['response'] = "";
+                            }
+                        }
+                      else
                         {
                           $array['status']   = $info['http_code'];
                           $array['response'] = curl_multi_getcontent($download['ch']);
                         }
-                      else
-                        {
-                          $array['status']   = false;
-                          $array['response'] = "";
-                        }
-                    }
-                  else
-                    {
-                      $array['status']   = $info['http_code'];
-                      $array['response'] = curl_multi_getcontent($download['ch']);
                     }
                   $downloads[] = $array;
                   curl_multi_remove_handle($this->mh, $download['ch']);
@@ -724,6 +736,8 @@
                   $this->segStart = $lastSegment['firstSegment'];
               else
                   $this->segStart = $firstSegment['firstSegment'];
+              if ($this->segStart < 0)
+                  $this->segStart = 0;
             }
           if ($this->fragStart === false)
             {
@@ -894,9 +908,9 @@
                           $frag['response'] = false;
                           $this->rename     = true;
 
-                          /* Resync with latest available fragment when we are left behind due to */
-                          /* slow connection and short live window on streaming server. make sure */
-                          /* to reset the last written fragment.                                  */
+                          /* Resync with latest available fragment when we are left behind due to slow *
+                           * connection and short live window on streaming server. make sure to reset  *
+                           * the last written fragment.                                                */
                           if ($this->live and ($fragNum >= $this->fragCount) and ($i + 1 == count($downloads)) and !$cc->active)
                             {
                               LogDebug("Trying to resync with latest available fragment");
