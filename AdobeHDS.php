@@ -497,9 +497,6 @@
                       if (!isHttpUrl($bootstrapUrl))
                           $bootstrapUrl = JoinUrl($mediaEntry['baseUrl'], $bootstrapUrl);
                       $mediaEntry['bootstrapUrl'] = NormalizePath($bootstrapUrl) . $this->auth;
-                      if ($cc->get($mediaEntry['bootstrapUrl']) != 200)
-                          LogError("Failed to get bootstrap info");
-                      $mediaEntry['bootstrap'] = $cc->response;
                     }
                   else
                       $mediaEntry['bootstrap'] = base64_decode(GetString($bootstrap[0]));
@@ -561,10 +558,17 @@
             }
           LogInfo(" Selected : " . $key);
 
+          // Parse initial bootstrap info
           $this->baseUrl = $this->media['baseUrl'];
           if (isset($this->media['bootstrapUrl']))
+            {
               $this->bootstrapUrl = $this->media['bootstrapUrl'];
-          $bootstrapInfo = $this->media['bootstrap'];
+              if ($cc->get($this->bootstrapUrl) != 200)
+                  LogError("Failed to get bootstrap info");
+              $bootstrapInfo = $cc->response;
+            }
+          else
+              $bootstrapInfo = $this->media['bootstrap'];
           ReadBoxHeader($bootstrapInfo, $pos, $boxType, $boxSize);
           if ($boxType == "abst")
               $this->ParseBootstrapBox($bootstrapInfo, $pos);
