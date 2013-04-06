@@ -850,9 +850,9 @@
                         }
                       $this->discontinuity = value_in_array_field($closest, "firstFragment", "discontinuityIndicator", $this->fragTable, true);
                     }
-                  if ($this->discontinuity)
+                  if ($this->discontinuity !== "")
                     {
-                      LogDebug("Skipping fragment $fragNum due to discontinuity");
+                      LogDebug("Skipping fragment $fragNum due to discontinuity, Type: " . $this->discontinuity);
                       $frag['response'] = false;
                       $this->rename     = true;
                     }
