@@ -969,65 +969,6 @@
           return false;
         }
 
-      function RenameFragments($baseFilename, $fragNum, $fileExt)
-        {
-          $files   = array();
-          $retries = 0;
-
-          while (true)
-            {
-              if ($retries >= 50)
-                  break;
-              $file = $baseFilename . ++$fragNum;
-              if (file_exists($file))
-                {
-                  $files[] = $file;
-                  $retries = 0;
-                }
-              else if (file_exists($file . $fileExt))
-                {
-                  $files[] = $file;
-                  $retries = 0;
-                }
-              else
-                  $retries++;
-            }
-
-          $fragCount = count($files);
-          natsort($files);
-          for ($i = 0; $i < $fragCount; $i++)
-              rename($files[$i], $baseFilename . ($i + 1));
-        }
-
-      function WriteMetadata($flv = false)
-        {
-          if (isset($this->media) and $this->media['metadata'])
-            {
-              $metadataSize = strlen($this->media['metadata']);
-              WriteByte($metadata, 0, SCRIPT_DATA);
-              WriteInt24($metadata, 1, $metadataSize);
-              WriteInt24($metadata, 4, 0);
-              WriteInt32($metadata, 7, 0);
-              $metadata = implode("", $metadata) . $this->media['metadata'];
-              WriteByte($metadata, $this->tagHeaderLen + $metadataSize - 1, 0x09);
-              WriteInt32($metadata, $this->tagHeaderLen + $metadataSize, $this->tagHeaderLen + $metadataSize);
-              if (is_resource($flv))
-                {
-                  fwrite($flv, $metadata, $this->tagHeaderLen + $metadataSize + $this->prevTagSize);
-                  return true;
-                }
-              else
-                  return $metadata;
-            }
-          return false;
-        }
-
-      function WriteFlvTimestamp(&$frag, $fragPos, $packetTS)
-        {
-          WriteInt24($frag, $fragPos + 4, ($packetTS & 0x00FFFFFF));
-          WriteByte($frag, $fragPos + 7, ($packetTS & 0xFF000000) >> 24);
-        }
-
       function DecodeFragment($frag, $fragNum, $opt = array())
         {
           $debug = $this->debug;
@@ -1117,7 +1058,7 @@
                     }
                 }
               if ($packetTS != $currentTS)
-                  $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
+                  WriteFlvTimestamp($frag, $fragPos, $packetTS);
 
               switch ($packetType)
               {
@@ -1156,7 +1097,7 @@
                                     {
                                       LogDebug(sprintf("%s\n" . $this->format, "Fixing audio timestamp", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize), $debug);
                                       $packetTS += (FRAMEFIX_STEP / 5) + ($this->prevAudioTS - $packetTS);
-                                      $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
+                                      WriteFlvTimestamp($frag, $fragPos, $packetTS);
                                     }
                               if (is_resource($flv))
                                 {
@@ -1229,7 +1170,7 @@
                                     {
                                       LogDebug(sprintf("%s\n" . $this->format, "Fixing video timestamp", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize), $debug);
                                       $packetTS += (FRAMEFIX_STEP / 5) + ($this->prevVideoTS - $packetTS);
-                                      $this->WriteFlvTimestamp($frag, $fragPos, $packetTS);
+                                      WriteFlvTimestamp($frag, $fragPos, $packetTS);
                                     }
                               if (is_resource($flv))
                                 {
@@ -1319,7 +1260,7 @@
                           $this->DecodeFragment($frag['response'], $frag['id'], $opt);
                           $opt['file'] = WriteFlvFile($outFile, $this->audio, $this->video);
                           if (!($this->live or ($this->fragStart > 0) or $this->filesize or $opt['tDuration']))
-                              $this->WriteMetadata($opt['file']);
+                              WriteMetadata($opt['file']);
 
                           $opt['debug'] = $this->debug;
                           $this->InitDecoder();
@@ -1453,6 +1394,12 @@
         }
     }
 
+  function WriteFlvTimestamp(&$frag, $fragPos, $packetTS)
+    {
+      WriteInt24($frag, $fragPos + 4, ($packetTS & 0x00FFFFFF));
+      WriteByte($frag, $fragPos + 7, ($packetTS & 0xFF000000) >> 24);
+    }
+
   function GetString($object)
     {
       return trim(strval($object));
@@ -1575,6 +1522,36 @@
       return $outFile;
     }
 
+  function RenameFragments($baseFilename, $fragNum, $fileExt)
+    {
+      $files   = array();
+      $retries = 0;
+
+      while (true)
+        {
+          if ($retries >= 50)
+              break;
+          $file = $baseFilename . ++$fragNum;
+          if (file_exists($file))
+            {
+              $files[] = $file;
+              $retries = 0;
+            }
+          else if (file_exists($file . $fileExt))
+            {
+              $files[] = $file . $fileExt;
+              $retries = 0;
+            }
+          else
+              $retries++;
+        }
+
+      $fragCount = count($files);
+      natsort($files);
+      for ($i = 0; $i < $fragCount; $i++)
+          rename($files[$i], $baseFilename . ($i + 1));
+    }
+
   function ShowHeader()
     {
       $header = "KSV Adobe HDS Downloader";
@@ -1605,6 +1582,29 @@
           LogError("Failed to open " . $outFile);
       fwrite($flv, $flvHeader, $flvHeaderLen);
       return $flv;
+    }
+
+  function WriteMetadata($flv = false)
+    {
+      if (isset($this->media) and $this->media['metadata'])
+        {
+          $metadataSize = strlen($this->media['metadata']);
+          WriteByte($metadata, 0, SCRIPT_DATA);
+          WriteInt24($metadata, 1, $metadataSize);
+          WriteInt24($metadata, 4, 0);
+          WriteInt32($metadata, 7, 0);
+          $metadata = implode("", $metadata) . $this->media['metadata'];
+          WriteByte($metadata, $this->tagHeaderLen + $metadataSize - 1, 0x09);
+          WriteInt32($metadata, $this->tagHeaderLen + $metadataSize, $this->tagHeaderLen + $metadataSize);
+          if (is_resource($flv))
+            {
+              fwrite($flv, $metadata, $this->tagHeaderLen + $metadataSize + $this->prevTagSize);
+              return true;
+            }
+          else
+              return $metadata;
+        }
+      return false;
     }
 
   function in_array_field($needle, $needle_field, $haystack, $strict = false)
@@ -1781,6 +1781,7 @@
   // Update the script
   if ($update)
     {
+      LogInfo("Updating script....");
       $status = $cc->get("https://raw.github.com/K-S-V/Scripts/master/AdobeHDS.php");
       if ($status == 200)
         {
@@ -1853,19 +1854,14 @@
       $fragNum = $start - 1;
   if ($rename)
     {
-      $f4f->RenameFragments($baseFilename, $fragNum, $fileExt);
+      RenameFragments($baseFilename, $fragNum, $fileExt);
       $fragNum = 0;
     }
   $count = $fragNum + 1;
   while (true)
     {
-      if (file_exists($baseFilename . $count . $fileExt))
+      if (file_exists($baseFilename . $count) or file_exists($baseFilename . $count . $fileExt))
           $fragCount++;
-      else if (file_exists($baseFilename . $count))
-        {
-          $fileExt = "";
-          $fragCount++;
-        }
       else
           break;
       $count++;
@@ -1875,7 +1871,7 @@
   if (!$f4f->processed)
     {
       // Process available fragments
-      if (!$fragCount)
+      if ($fragCount < 1)
           exit(1);
       $timeStart = microtime(true);
       LogDebug("Joining Fragments:");
@@ -1892,7 +1888,7 @@
               else
                   $opt['flv'] = WriteFlvFile($outDir . $outFile . ".flv", $f4f->audio, $f4f->video);
               if (!(($fragNum > 0) or $filesize))
-                  $f4f->WriteMetadata($opt['flv']);
+                  WriteMetadata($opt['flv']);
 
               $opt['debug'] = $debug;
               $f4f->InitDecoder();
