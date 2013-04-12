@@ -260,6 +260,20 @@
         }
     }
 
+  function GetResponse($cc, $url, $data)
+    {
+      $response = $cc->post($url, $data);
+      $result   = explode("\r\n\r\n", $response, 2);
+      $vars     = explode("&", trim($result[1]));
+      foreach ($vars as $var)
+        {
+          $temp          = explode("=", $var);
+          $name          = strtolower($temp[0]);
+          $Params[$name] = urldecode($temp[1]);
+        }
+      return $Params;
+    }
+
   function KeyName(array $a, $pos)
     {
       $temp = array_slice($a, $pos, 1, true);
@@ -357,7 +371,7 @@
 
   function ShowChannel($url, $filename)
     {
-      global $cc, $format, $password, $PremiumUser, $quality, $username, $vlc, $windows, $cli;
+      global $cc, $cli, $format, $password, $PremiumUser, $quality, $username, $vlc, $windows;
       LogInfo("Retrieving html....");
       $cc->headers = $cc->headers();
       $html        = $cc->get($url);
@@ -366,31 +380,25 @@
           Close("No channel id found");
 
       // Retrieve rtmp stream info
-      $cc->headers[] = "Referer: http://weeb.tv/static/player.swf";
-      $response      = $cc->post("http://weeb.tv/api/setPlayer", "cid=$cid[1]&watchTime=0&firstConnect=1&ip=NaN");
-      $result        = explode("\r\n\r\n", $response, 2);
-      $flashVars     = explode("&", trim($result[1]));
-      foreach ($flashVars as $flashVar)
-        {
-          $temp          = explode("=", $flashVar);
-          $name          = strtolower($temp[0]);
-          $Params[$name] = $temp[1];
-        }
-      $rtmp         = urldecode($Params["10"]);
-      $playpath     = urldecode($Params["11"]);
-      $MultiBitrate = urldecode($Params["20"]);
-      $PremiumUser  = urldecode($Params["5"]);
+      $cc->headers[] = "Referer: http://static2.weeb.tv/static2/player.swf";
+      $Params        = GetResponse($cc, "http://weeb.tv/api/setPlayer", "cid=$cid[1]&watchTime=0&firstConnect=1&ip=NaN");
+      if (isset($Params[0]) and $Params[0] <= 0)
+          Close("Server refused to send required parameters.");
+      $rtmp         = $Params["10"];
+      $playpath     = $Params["11"];
+      $MultiBitrate = $Params["20"];
+      $PremiumUser  = $Params["5"];
       if ($MultiBitrate)
           $playpath .= $quality;
 
-      $BlockType = urldecode($Params["13"]);
+      $BlockType = $Params["13"];
       if ($BlockType != 0)
         {
           switch ($BlockType)
           {
               case 1:
-                  $BlockTime        = urldecode($Params["14"]);
-                  $ReconnectionTime = urldecode($Params["16"]);
+                  $BlockTime        = $Params["14"];
+                  $ReconnectionTime = $Params["16"];
                   Close("You have crossed free viewing limit. you have been blocked for $BlockTime minutes. try again in $ReconnectionTime minutes.");
                   break;
               case 11:
@@ -401,24 +409,14 @@
           }
         }
 
+      // Retrieve authentication token
       if (!isset($Params["73"]))
-        {
-          // Retrieve authentication token
-          $response  = $cc->post("http://weeb.tv/setplayer", "cid=$cid[2]&watchTime=0&firstConnect=0&ip=NaN");
-          $result    = explode("\r\n\r\n", $response, 2);
-          $flashVars = explode("&", trim($result[1]));
-          foreach ($flashVars as $flashVar)
-            {
-              $temp          = explode("=", $flashVar);
-              $name          = strtolower($temp[0]);
-              $Params[$name] = $temp[1];
-            }
-        }
+          $Params = GetResponse($cc, "http://weeb.tv/setplayer", "cid=$cid[2]&watchTime=0&firstConnect=0&ip=NaN");
 
       if (isset($Params["73"]))
           $token = $Params["73"];
       else
-          Close("Server seems busy. please try after some time.");
+          Close("Server seems busy, please try after some time.");
       LogInfo(sprintf($format, "RTMP Url", $rtmp));
       LogInfo(sprintf($format, "Playpath", $playpath));
       LogInfo(sprintf($format, "Token", $token));
@@ -429,7 +427,7 @@
       $filename = SafeFileName($filename);
       if (file_exists($filename . ".flv"))
           unlink($filename . ".flv");
-      $basecmd = 'rtmpdump -r "' . $rtmp . "/" . $playpath . '" -W "http://static2.weeb.tv/player.swf" --weeb "' . $token . "\" --live";
+      $basecmd = 'rtmpdump -r "' . $rtmp . "/" . $playpath . '" -W "http://static2.weeb.tv/static2/player.swf" --weeb "' . $token . "\" --live";
       $command = $basecmd . " | \"$vlc\" --meta-title \"$filename\" -";
 
       if ($cli->getParam('print'))
