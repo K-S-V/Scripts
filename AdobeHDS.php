@@ -1260,7 +1260,7 @@
                           $this->DecodeFragment($frag['response'], $frag['id'], $opt);
                           $opt['file'] = WriteFlvFile($outFile, $this->audio, $this->video);
                           if (!($this->live or ($this->fragStart > 0) or $this->filesize or $opt['tDuration']))
-                              WriteMetadata($opt['file']);
+                              WriteMetadata($this, $opt['file']);
 
                           $opt['debug'] = $this->debug;
                           $this->InitDecoder();
@@ -1584,21 +1584,21 @@
       return $flv;
     }
 
-  function WriteMetadata($flv = false)
+  function WriteMetadata($f4f, $flv = false)
     {
-      if (isset($this->media) and $this->media['metadata'])
+      if (isset($f4f->media) and $f4f->media['metadata'])
         {
-          $metadataSize = strlen($this->media['metadata']);
+          $metadataSize = strlen($f4f->media['metadata']);
           WriteByte($metadata, 0, SCRIPT_DATA);
           WriteInt24($metadata, 1, $metadataSize);
           WriteInt24($metadata, 4, 0);
           WriteInt32($metadata, 7, 0);
-          $metadata = implode("", $metadata) . $this->media['metadata'];
-          WriteByte($metadata, $this->tagHeaderLen + $metadataSize - 1, 0x09);
-          WriteInt32($metadata, $this->tagHeaderLen + $metadataSize, $this->tagHeaderLen + $metadataSize);
+          $metadata = implode("", $metadata) . $f4f->media['metadata'];
+          WriteByte($metadata, $f4f->tagHeaderLen + $metadataSize - 1, 0x09);
+          WriteInt32($metadata, $f4f->tagHeaderLen + $metadataSize, $f4f->tagHeaderLen + $metadataSize);
           if (is_resource($flv))
             {
-              fwrite($flv, $metadata, $this->tagHeaderLen + $metadataSize + $this->prevTagSize);
+              fwrite($flv, $metadata, $f4f->tagHeaderLen + $metadataSize + $f4f->prevTagSize);
               return true;
             }
           else
@@ -1877,18 +1877,22 @@
       LogDebug("Joining Fragments:");
       for ($i = $fragNum + 1; $i <= $fragNum + $fragCount; $i++)
         {
-          $frag = file_get_contents($baseFilename . $i . $fileExt);
+          $file = $baseFilename . $i;
+          if (file_exists($file))
+              $frag = file_get_contents($file);
+          else if (file_exists($file . $fileExt))
+              $frag = file_get_contents($file . $fileExt);
           if (!isset($opt['flv']))
             {
               $opt['debug'] = false;
               $f4f->InitDecoder();
               $f4f->DecodeFragment($frag, $i, $opt);
               if ($filesize)
-                  $opt['flv'] = WriteFlvFile($outDir . $outFile . '-' . $fileCount++ . ".flv", $f4f->audio, $f4f->video);
+                  $opt['flv'] = WriteFlvFile(JoinUrl($outDir, $outFile . '-' . $fileCount++ . ".flv"), $f4f->audio, $f4f->video);
               else
-                  $opt['flv'] = WriteFlvFile($outDir . $outFile . ".flv", $f4f->audio, $f4f->video);
+                  $opt['flv'] = WriteFlvFile(JoinUrl($outDir, $outFile . ".flv"), $f4f->audio, $f4f->video);
               if (!(($fragNum > 0) or $filesize))
-                  WriteMetadata($opt['flv']);
+                  WriteMetadata($f4f, $opt['flv']);
 
               $opt['debug'] = $debug;
               $f4f->InitDecoder();
@@ -1902,7 +1906,8 @@
             }
           LogInfo("Processed " . ($i - $fragNum) . " fragments", true);
         }
-      fclose($opt['flv']);
+      if (isset($opt['flv']))
+          fclose($opt['flv']);
       $timeEnd   = microtime(true);
       $timeTaken = sprintf("%.2f", $timeEnd - $timeStart);
       LogInfo("Joined $fragCount fragments in $timeTaken seconds");
@@ -1912,8 +1917,13 @@
   if ($delete)
     {
       for ($i = $fragNum + 1; $i <= $fragNum + $fragCount; $i++)
-          if (file_exists($baseFilename . $i . $fileExt))
-              unlink($baseFilename . $i . $fileExt);
+        {
+          $file = $baseFilename . $i;
+          if (file_exists($file))
+              unlink($file);
+          else if (file_exists($file . $fileExt))
+              unlink($file . $fileExt);
+        }
     }
 
   LogInfo("Finished");
