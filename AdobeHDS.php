@@ -282,26 +282,23 @@
                       $array['status']   = false;
                       $array['response'] = "";
                     }
-                  else
+                  else if ($info['http_code'] == 200)
                     {
-                      if ($info['http_code'] == 200)
-                        {
-                          if ($info['size_download'] >= $info['download_content_length'])
-                            {
-                              $array['status']   = $info['http_code'];
-                              $array['response'] = curl_multi_getcontent($download['ch']);
-                            }
-                          else
-                            {
-                              $array['status']   = false;
-                              $array['response'] = "";
-                            }
-                        }
-                      else
+                      if ($info['size_download'] >= $info['download_content_length'])
                         {
                           $array['status']   = $info['http_code'];
                           $array['response'] = curl_multi_getcontent($download['ch']);
                         }
+                      else
+                        {
+                          $array['status']   = false;
+                          $array['response'] = "";
+                        }
+                    }
+                  else
+                    {
+                      $array['status']   = $info['http_code'];
+                      $array['response'] = curl_multi_getcontent($download['ch']);
                     }
                   $downloads[] = $array;
                   curl_multi_remove_handle($this->mh, $download['ch']);
@@ -413,10 +410,10 @@
           return $xml;
         }
 
-      function ParseManifest($cc, $manifest)
+      function ParseManifest($cc, $parentManifest)
         {
           LogInfo("Processing manifest info....");
-          $xml = $this->GetManifest($cc, $manifest);
+          $xml = $this->GetManifest($cc, $parentManifest);
 
           // Extract baseUrl from manifest url
           $baseUrl = $xml->xpath("/ns:manifest/ns:baseURL");
@@ -424,7 +421,7 @@
               $baseUrl = GetString($baseUrl[0]);
           else
             {
-              $baseUrl = $manifest;
+              $baseUrl = $parentManifest;
               if (strpos($baseUrl, '?') !== false)
                   $baseUrl = substr($baseUrl, 0, strpos($baseUrl, '?'));
               $baseUrl = substr($baseUrl, 0, strrpos($baseUrl, '/'));
@@ -433,29 +430,34 @@
           $url = $xml->xpath("/ns:manifest/ns:media[@*]");
           if (isset($url[0]['href']))
             {
-              foreach ($url as $manifest)
+              $count = 1;
+              foreach ($url as $childManifest)
                 {
-                  $bitrate = floor(GetString($manifest['bitrate']));
-                  $entry =& $manifests[$bitrate];
+                  if (isset($childManifest['bitrate']))
+                      $bitrate = floor(GetString($childManifest['bitrate']));
+                  else
+                      $bitrate = $count++;
+                  $entry =& $childManifests[$bitrate];
                   $entry['bitrate'] = $bitrate;
-                  $href             = GetString($manifest['href']);
+                  $href             = GetString($childManifest['href']);
                   if (!isHttpUrl($href))
                       $href = JoinUrl($baseUrl, $href);
                   $entry['url'] = NormalizePath($href);
                   $entry['xml'] = $this->GetManifest($cc, $entry['url']);
                 }
-              unset($entry, $manifest);
+              unset($entry, $childManifest);
             }
           else
             {
-              $manifests[0]['bitrate'] = 0;
-              $manifests[0]['url']     = $manifest;
-              $manifests[0]['xml']     = $xml;
+              $childManifests[0]['bitrate'] = 0;
+              $childManifests[0]['url']     = $parentManifest;
+              $childManifests[0]['xml']     = $xml;
             }
 
-          foreach ($manifests as $manifest)
+          $count = 1;
+          foreach ($childManifests as $childManifest)
             {
-              $xml = $manifest['xml'];
+              $xml = $childManifest['xml'];
 
               // Extract baseUrl from manifest url
               $baseUrl = $xml->xpath("/ns:manifest/ns:baseURL");
@@ -463,7 +465,7 @@
                   $baseUrl = GetString($baseUrl[0]);
               else
                 {
-                  $baseUrl = $manifest['url'];
+                  $baseUrl = $childManifest['url'];
                   if (strpos($baseUrl, '?') !== false)
                       $baseUrl = substr($baseUrl, 0, strpos($baseUrl, '?'));
                   $baseUrl = substr($baseUrl, 0, strrpos($baseUrl, '/'));
@@ -478,7 +480,12 @@
                   $array['metadata'] = GetString($stream->{'metadata'});
                   $stream            = $array;
 
-                  $bitrate  = isset($stream['bitrate']) ? floor($stream['bitrate']) : $manifest['bitrate'];
+                  if (isset($stream['bitrate']))
+                      $bitrate = floor($stream['bitrate']);
+                  else if ($childManifest['bitrate'] > 0)
+                      $bitrate = $childManifest['bitrate'];
+                  else
+                      $bitrate = $count++;
                   $streamId = isset($stream[strtolower('streamId')]) ? $stream[strtolower('streamId')] : "";
                   $mediaEntry =& $this->media[$bitrate];
 
@@ -505,7 +512,7 @@
                   else
                       $mediaEntry['metadata'] = "";
                 }
-              unset($mediaEntry);
+              unset($mediaEntry, $childManifest);
             }
 
           // Available qualities
