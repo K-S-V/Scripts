@@ -637,26 +637,33 @@
           $drmData          = ReadString($bootstrapInfo, $pos);
           $metadata         = ReadString($bootstrapInfo, $pos);
           $segRunTableCount = ReadByte($bootstrapInfo, $pos++);
+          LogDebug(sprintf("%s:", "Segment Tables"));
           for ($i = 0; $i < $segRunTableCount; $i++)
             {
+              LogDebug(sprintf("\nTable %d:", $i + 1));
               ReadBoxHeader($bootstrapInfo, $pos, $boxType, $boxSize);
               if ($boxType == "asrt")
-                  $this->ParseAsrtBox($bootstrapInfo, $pos);
+                  $this->segTable[$i] = $this->ParseAsrtBox($bootstrapInfo, $pos, $i + 1);
               $pos += $boxSize;
             }
           $fragRunTableCount = ReadByte($bootstrapInfo, $pos++);
+          LogDebug(sprintf("%s:", "Fragment Tables"));
           for ($i = 0; $i < $fragRunTableCount; $i++)
             {
+              LogDebug(sprintf("\nTable %d:", $i + 1));
               ReadBoxHeader($bootstrapInfo, $pos, $boxType, $boxSize);
               if ($boxType == "afrt")
-                  $this->ParseAfrtBox($bootstrapInfo, $pos);
+                  $this->fragTable[$i] = $this->ParseAfrtBox($bootstrapInfo, $pos, $i + 1);
               $pos += $boxSize;
             }
+          $this->segTable  = $this->segTable[0];
+          $this->fragTable = $this->fragTable[0];
           $this->ParseSegAndFragTable();
         }
 
       function ParseAsrtBox($asrt, $pos)
         {
+          $segTable          = array();
           $version           = ReadByte($asrt, $pos);
           $flags             = ReadInt24($asrt, $pos + 1);
           $qualityEntryCount = ReadByte($asrt, $pos + 4);
@@ -665,11 +672,11 @@
               $qualitySegmentUrlModifiers[$i] = ReadString($asrt, $pos);
           $segCount = ReadInt32($asrt, $pos);
           $pos += 4;
-          LogDebug(sprintf("%s:\n\n %-8s%-10s", "Segment Entries", "Number", "Fragments"));
+          LogDebug(sprintf(" %-8s%-10s", "Number", "Fragments"));
           for ($i = 0; $i < $segCount; $i++)
             {
               $firstSegment = ReadInt32($asrt, $pos);
-              $segEntry =& $this->segTable[$firstSegment];
+              $segEntry =& $segTable[$firstSegment];
               $segEntry['firstSegment']        = $firstSegment;
               $segEntry['fragmentsPerSegment'] = ReadInt32($asrt, $pos + 4);
               if ($segEntry['fragmentsPerSegment'] & 0x80000000)
@@ -677,13 +684,15 @@
               $pos += 8;
             }
           unset($segEntry);
-          foreach ($this->segTable as $segEntry)
+          foreach ($segTable as $segEntry)
               LogDebug(sprintf(" %-8s%-10s", $segEntry['firstSegment'], $segEntry['fragmentsPerSegment']));
           LogDebug("");
+          return $segTable;
         }
 
       function ParseAfrtBox($afrt, $pos)
         {
+          $fragTable         = array();
           $version           = ReadByte($afrt, $pos);
           $flags             = ReadInt24($afrt, $pos + 1);
           $timescale         = ReadInt32($afrt, $pos + 4);
@@ -693,11 +702,11 @@
               $qualitySegmentUrlModifiers[$i] = ReadString($afrt, $pos);
           $fragEntries = ReadInt32($afrt, $pos);
           $pos += 4;
-          LogDebug(sprintf("%s:\n\n %-12s%-16s%-16s%-16s", "Fragment Entries", "Number", "Timestamp", "Duration", "Discontinuity"));
+          LogDebug(sprintf(" %-12s%-16s%-16s%-16s", "Number", "Timestamp", "Duration", "Discontinuity"));
           for ($i = 0; $i < $fragEntries; $i++)
             {
               $firstFragment = ReadInt32($afrt, $pos);
-              $fragEntry =& $this->fragTable[$firstFragment];
+              $fragEntry =& $fragTable[$firstFragment];
               $fragEntry['firstFragment']          = $firstFragment;
               $fragEntry['firstFragmentTimestamp'] = ReadInt64($afrt, $pos + 4);
               $fragEntry['fragmentDuration']       = ReadInt32($afrt, $pos + 12);
@@ -707,9 +716,10 @@
                   $fragEntry['discontinuityIndicator'] = ReadByte($afrt, $pos++);
             }
           unset($fragEntry);
-          foreach ($this->fragTable as $fragEntry)
+          foreach ($fragTable as $fragEntry)
               LogDebug(sprintf(" %-12s%-16s%-16s%-16s", $fragEntry['firstFragment'], $fragEntry['firstFragmentTimestamp'], $fragEntry['fragmentDuration'], $fragEntry['discontinuityIndicator']));
           LogDebug("");
+          return $fragTable;
         }
 
       function ParseSegAndFragTable()
@@ -720,7 +730,7 @@
           $lastFragment  = end($this->fragTable);
 
           // Check if live stream is still live
-          if (($lastFragment['firstFragment'] == 0) and ($lastFragment['fragmentDuration'] == 0))
+          if (($lastFragment['fragmentDuration'] == 0) and ($lastFragment['discontinuityIndicator'] == 0))
             {
               $this->live   = false;
               $lastFragment = prev($this->fragTable);
