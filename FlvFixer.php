@@ -440,16 +440,10 @@
         }
     }
 
-  // Fix flv header when required
-  if (!($audio and $video))
-    {
-      if ($audio and !$video)
-          $flvHeader[4] = "\x04";
-      else if ($video and !$audio)
-          $flvHeader[4] = "\x01";
-      fseek($flvOut, 0);
-      fwrite($flvOut, $flvHeader, $flvHeaderLen);
-    }
+  // Set proper Audio/Video marker
+  WriteByte($flvHeader, 4, $audio << 2 | $video);
+  fseek($flvOut, 0);
+  fwrite($flvOut, $flvHeader, $flvHeaderLen);
 
   fclose($flvIn);
   fclose($flvOut);

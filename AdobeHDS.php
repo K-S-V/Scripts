@@ -1583,13 +1583,8 @@
       $flvHeader    = pack("H*", "464c5601050000000900000000");
       $flvHeaderLen = strlen($flvHeader);
 
-      if (!($audio and $video))
-        {
-          if ($audio and !$video)
-              $flvHeader[4] = "\x04";
-          else if ($video and !$audio)
-              $flvHeader[4] = "\x01";
-        }
+      // Set proper Audio/Video marker
+      WriteByte($flvHeader, 4, $audio << 2 | $video);
 
       if (is_resource($outFile))
           $flv = $outFile;
