@@ -103,7 +103,7 @@
       function cURL($cookies = true, $cookie = 'Cookies.txt', $compression = 'gzip', $proxy = '')
         {
           $this->headers     = $this->headers();
-          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:19.0) Gecko/20100101 Firefox/19.0';
+          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:20.0) Gecko/20100101 Firefox/20.0';
           $this->compression = $compression;
           $this->cookies     = $cookies;
           if ($this->cookies == true)
@@ -643,7 +643,7 @@
               LogDebug(sprintf("\nTable %d:", $i + 1));
               ReadBoxHeader($bootstrapInfo, $pos, $boxType, $boxSize);
               if ($boxType == "asrt")
-                  $this->segTable[$i] = $this->ParseAsrtBox($bootstrapInfo, $pos, $i + 1);
+                  $segTable[$i] = $this->ParseAsrtBox($bootstrapInfo, $pos);
               $pos += $boxSize;
             }
           $fragRunTableCount = ReadByte($bootstrapInfo, $pos++);
@@ -653,11 +653,11 @@
               LogDebug(sprintf("\nTable %d:", $i + 1));
               ReadBoxHeader($bootstrapInfo, $pos, $boxType, $boxSize);
               if ($boxType == "afrt")
-                  $this->fragTable[$i] = $this->ParseAfrtBox($bootstrapInfo, $pos, $i + 1);
+                  $fragTable[$i] = $this->ParseAfrtBox($bootstrapInfo, $pos);
               $pos += $boxSize;
             }
-          $this->segTable  = $this->segTable[0];
-          $this->fragTable = $this->fragTable[0];
+          $this->segTable  = array_replace($this->segTable, $segTable[0]);
+          $this->fragTable = array_replace($this->fragTable, $fragTable[0]);
           $this->ParseSegAndFragTable();
         }
 
@@ -737,8 +737,9 @@
             }
 
           // Count total fragments by adding all entries in compactly coded segment table
-          $prev            = reset($this->segTable);
-          $this->fragCount = $prev['fragmentsPerSegment'];
+          $invalidFragCount = false;
+          $prev             = reset($this->segTable);
+          $this->fragCount  = $prev['fragmentsPerSegment'];
           while ($current = next($this->segTable))
             {
               $this->fragCount += ($current['firstSegment'] - $prev['firstSegment'] - 1) * $prev['fragmentsPerSegment'];
@@ -747,6 +748,8 @@
             }
           if ($this->fragCount > 0)
               $this->fragCount += $firstFragment['firstFragment'] - 1;
+          else
+              $invalidFragCount = true;
           if ($this->fragCount < $lastFragment['firstFragment'])
               $this->fragCount = $lastFragment['firstFragment'];
 
@@ -762,7 +765,7 @@
             }
           if ($this->fragStart === false)
             {
-              if ($this->live)
+              if ($this->live and !$invalidFragCount)
                   $this->fragStart = $this->fragCount - 2;
               else
                   $this->fragStart = $firstFragment['firstFragment'] - 1;
