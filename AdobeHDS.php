@@ -144,13 +144,16 @@
       function get($url)
         {
           $process = curl_init($url);
-          curl_setopt($process, CURLOPT_HTTPHEADER, $this->headers);
-          curl_setopt($process, CURLOPT_HEADER, 0);
-          curl_setopt($process, CURLOPT_USERAGENT, $this->user_agent);
-          curl_setopt($process, CURLOPT_ENCODING, $this->compression);
-          curl_setopt($process, CURLOPT_TIMEOUT, 60);
-          curl_setopt($process, CURLOPT_RETURNTRANSFER, 1);
-          curl_setopt($process, CURLOPT_FOLLOWLOCATION, 1);
+          $options = array(
+              CURLOPT_HTTPHEADER => $this->headers,
+              CURLOPT_HEADER => 0,
+              CURLOPT_USERAGENT => $this->user_agent,
+              CURLOPT_ENCODING => $this->compression,
+              CURLOPT_TIMEOUT => 30,
+              CURLOPT_RETURNTRANSFER => 1,
+              CURLOPT_FOLLOWLOCATION => 1
+          );
+          curl_setopt_array($process, $options);
           if (!$this->cert_check)
               curl_setopt($process, CURLOPT_SSL_VERIFYPEER, false);
           if ($this->cookies == true)
@@ -175,15 +178,18 @@
           $process   = curl_init($url);
           $headers   = $this->headers;
           $headers[] = 'Content-Type: application/x-www-form-urlencoded;charset=UTF-8';
-          curl_setopt($process, CURLOPT_HTTPHEADER, $headers);
-          curl_setopt($process, CURLOPT_HEADER, 1);
-          curl_setopt($process, CURLOPT_USERAGENT, $this->user_agent);
-          curl_setopt($process, CURLOPT_ENCODING, $this->compression);
-          curl_setopt($process, CURLOPT_TIMEOUT, 60);
-          curl_setopt($process, CURLOPT_RETURNTRANSFER, 1);
-          curl_setopt($process, CURLOPT_FOLLOWLOCATION, 1);
-          curl_setopt($process, CURLOPT_POST, 1);
-          curl_setopt($process, CURLOPT_POSTFIELDS, $data);
+          $options   = array(
+              CURLOPT_HTTPHEADER => $headers,
+              CURLOPT_HEADER => 1,
+              CURLOPT_USERAGENT => $this->user_agent,
+              CURLOPT_ENCODING => $this->compression,
+              CURLOPT_TIMEOUT => 30,
+              CURLOPT_RETURNTRANSFER => 1,
+              CURLOPT_FOLLOWLOCATION => 1,
+              CURLOPT_POST => 1,
+              CURLOPT_POSTFIELDS => $data
+          );
+          curl_setopt_array($process, $options);
           if (!$this->cert_check)
               curl_setopt($process, CURLOPT_SSL_VERIFYPEER, false);
           if ($this->cookies == true)
@@ -232,14 +238,18 @@
           $download['id']  = $id;
           $download['url'] = $url;
           $download['ch']  = curl_init($url);
-          curl_setopt($download['ch'], CURLOPT_HTTPHEADER, $this->headers);
-          curl_setopt($download['ch'], CURLOPT_HEADER, 0);
-          curl_setopt($download['ch'], CURLOPT_USERAGENT, $this->user_agent);
-          curl_setopt($download['ch'], CURLOPT_ENCODING, $this->compression);
-          curl_setopt($download['ch'], CURLOPT_TIMEOUT, 300);
-          curl_setopt($download['ch'], CURLOPT_BINARYTRANSFER, 1);
-          curl_setopt($download['ch'], CURLOPT_RETURNTRANSFER, 1);
-          curl_setopt($download['ch'], CURLOPT_FOLLOWLOCATION, 1);
+          $options         = array(
+              CURLOPT_HTTPHEADER => $this->headers,
+              CURLOPT_HEADER => 0,
+              CURLOPT_USERAGENT => $this->user_agent,
+              CURLOPT_ENCODING => $this->compression,
+              CURLOPT_LOW_SPEED_LIMIT => 1024,
+              CURLOPT_LOW_SPEED_TIME => 10,
+              CURLOPT_BINARYTRANSFER => 1,
+              CURLOPT_RETURNTRANSFER => 1,
+              CURLOPT_FOLLOWLOCATION => 1
+          );
+          curl_setopt_array($download['ch'], $options);
           if (!$this->cert_check)
               curl_setopt($download['ch'], CURLOPT_SSL_VERIFYPEER, false);
           if ($this->cookies == true)
