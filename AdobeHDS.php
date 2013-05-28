@@ -347,8 +347,8 @@
 
   class F4F
     {
-      var $audio, $auth, $baseFilename, $baseTS, $bootstrapUrl, $baseUrl, $debug, $duration, $fileCount, $filesize;
-      var $fixWindow, $format, $live, $media, $outDir, $outFile, $parallel, $play, $processed, $quality, $rename, $video;
+      var $audio, $auth, $baseFilename, $baseTS, $bootstrapUrl, $baseUrl, $debug, $duration, $fileCount, $filesize, $fixWindow;
+      var $format, $live, $media, $metadata, $outDir, $outFile, $parallel, $play, $processed, $quality, $rename, $video;
       var $prevTagSize, $tagHeaderLen;
       var $segTable, $fragTable, $segNum, $fragNum, $frags, $fragCount, $lastFrag, $fragUrl, $discontinuity;
       var $prevAudioTS, $prevVideoTS, $pAudioTagLen, $pVideoTagLen, $pAudioTagPos, $pVideoTagPos;
@@ -365,6 +365,7 @@
           $this->fixWindow     = 1000;
           $this->format        = "";
           $this->live          = false;
+          $this->metadata      = true;
           $this->outDir        = "";
           $this->outFile       = "";
           $this->parallel      = 8;
@@ -626,7 +627,10 @@
           $byte             = ReadByte($bootstrapInfo, $pos + 8);
           $profile          = ($byte & 0xC0) >> 6;
           if (($byte & 0x20) >> 5)
-              $this->live = true;
+            {
+              $this->live     = true;
+              $this->metadata = false;
+            }
           $update = ($byte & 0x10) >> 4;
           if (!$update)
             {
@@ -742,8 +746,9 @@
           // Check if live stream is still live
           if (($lastFragment['fragmentDuration'] == 0) and ($lastFragment['discontinuityIndicator'] == 0))
             {
-              $this->live   = false;
-              $lastFragment = prev($this->fragTable);
+              $this->live = false;
+              array_pop($this->fragTable);
+              $lastFragment = end($this->fragTable);
             }
 
           // Count total fragments by adding all entries in compactly coded segment table
@@ -770,8 +775,8 @@
                   $this->segStart = $lastSegment['firstSegment'];
               else
                   $this->segStart = $firstSegment['firstSegment'];
-              if ($this->segStart < 0)
-                  $this->segStart = 0;
+              if ($this->segStart < 1)
+                  $this->segStart = 1;
             }
           if ($this->fragStart === false)
             {
@@ -1289,7 +1294,7 @@
                           $this->InitDecoder();
                           $this->DecodeFragment($frag['response'], $frag['id'], $opt);
                           $opt['file'] = WriteFlvFile($outFile, $this->audio, $this->video);
-                          if (!($this->live or ($this->fragStart > 0) or $this->filesize or $opt['tDuration']))
+                          if ($this->metadata)
                               WriteMetadata($this, $opt['file']);
 
                           $opt['debug'] = $this->debug;
@@ -1679,6 +1684,7 @@
   $fragCount    = 0;
   $fragNum      = 0;
   $manifest     = "";
+  $metadata     = true;
   $outDir       = "";
   $outFile      = "";
   $play         = false;
@@ -1752,6 +1758,7 @@
   $f4f->debug =& $debug;
   $f4f->fixWindow =& $fixWindow;
   $f4f->format =& $format;
+  $f4f->metadata =& $metadata;
   $f4f->outDir =& $outDir;
   $f4f->outFile =& $outFile;
   $f4f->play =& $play;
@@ -1841,6 +1848,10 @@
   if ($play)
       $filesize = 0;
 
+  // Disable metadata if it invalidates the stream duration
+  if ($start or $duration or $filesize)
+      $metadata = false;
+
   // Download fragments when manifest is available
   if ($manifest)
     {
@@ -1916,7 +1927,7 @@
                   $opt['flv'] = WriteFlvFile(JoinUrl($outDir, $outFile . '-' . $fileCount++ . ".flv"), $f4f->audio, $f4f->video);
               else
                   $opt['flv'] = WriteFlvFile(JoinUrl($outDir, $outFile . ".flv"), $f4f->audio, $f4f->video);
-              if (!(($fragNum > 0) or $filesize))
+              if ($metadata)
                   WriteMetadata($f4f, $opt['flv']);
 
               $opt['debug'] = $debug;
