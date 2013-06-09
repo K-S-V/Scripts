@@ -90,7 +90,7 @@
       function cURL($cookies = true, $cookie = 'Cookies.txt', $compression = 'gzip', $proxy = '')
         {
           $this->headers     = $this->headers();
-          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:19.0) Gecko/20100101 Firefox/19.0';
+          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:21.0) Gecko/20100101 Firefox/21.0';
           $this->compression = $compression;
           $this->cookies     = $cookies;
           if ($this->cookies == true)
@@ -129,13 +129,16 @@
       function get($url)
         {
           $process = curl_init($url);
-          curl_setopt($process, CURLOPT_HTTPHEADER, $this->headers);
-          curl_setopt($process, CURLOPT_HEADER, 0);
-          curl_setopt($process, CURLOPT_USERAGENT, $this->user_agent);
-          curl_setopt($process, CURLOPT_ENCODING, $this->compression);
-          curl_setopt($process, CURLOPT_TIMEOUT, 30);
-          curl_setopt($process, CURLOPT_RETURNTRANSFER, 1);
-          curl_setopt($process, CURLOPT_FOLLOWLOCATION, 1);
+          $options = array(
+              CURLOPT_HTTPHEADER => $this->headers,
+              CURLOPT_HEADER => 0,
+              CURLOPT_USERAGENT => $this->user_agent,
+              CURLOPT_ENCODING => $this->compression,
+              CURLOPT_TIMEOUT => 30,
+              CURLOPT_RETURNTRANSFER => 1,
+              CURLOPT_FOLLOWLOCATION => 1
+          );
+          curl_setopt_array($process, $options);
           if (!$this->cert_check)
               curl_setopt($process, CURLOPT_SSL_VERIFYPEER, false);
           if ($this->cookies == true)
@@ -155,15 +158,18 @@
           $process   = curl_init($url);
           $headers   = $this->headers;
           $headers[] = 'Content-Type: application/x-www-form-urlencoded;charset=UTF-8';
-          curl_setopt($process, CURLOPT_HTTPHEADER, $headers);
-          curl_setopt($process, CURLOPT_HEADER, 1);
-          curl_setopt($process, CURLOPT_USERAGENT, $this->user_agent);
-          curl_setopt($process, CURLOPT_ENCODING, $this->compression);
-          curl_setopt($process, CURLOPT_TIMEOUT, 30);
-          curl_setopt($process, CURLOPT_RETURNTRANSFER, 1);
-          curl_setopt($process, CURLOPT_FOLLOWLOCATION, 1);
-          curl_setopt($process, CURLOPT_POST, 1);
-          curl_setopt($process, CURLOPT_POSTFIELDS, $data);
+          $options   = array(
+              CURLOPT_HTTPHEADER => $headers,
+              CURLOPT_HEADER => 1,
+              CURLOPT_USERAGENT => $this->user_agent,
+              CURLOPT_ENCODING => $this->compression,
+              CURLOPT_TIMEOUT => 30,
+              CURLOPT_RETURNTRANSFER => 1,
+              CURLOPT_FOLLOWLOCATION => 1,
+              CURLOPT_POST => 1,
+              CURLOPT_POSTFIELDS => $data
+          );
+          curl_setopt_array($process, $options);
           if (!$this->cert_check)
               curl_setopt($process, CURLOPT_SSL_VERIFYPEER, false);
           if ($this->cookies == true)
@@ -229,9 +235,7 @@
       if ($cli->getParam('list'))
         {
           foreach ($items as $name => $url)
-            {
               printf("%-25.25s = %s\n", preg_replace('/=/', '-', $name), $url);
-            }
           exit(0);
         }
 
@@ -476,7 +480,7 @@
   if (!$quiet)
       ShowHeader();
 
-  strncasecmp(php_uname('s'), "Win", 3) == 0 ? $windows = true : $windows = false;
+  $windows = (strncasecmp(php_uname('s'), "Win", 3) == 0 ? true : false);
   if ($windows)
     {
       exec("chcp 65001");
