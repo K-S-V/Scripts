@@ -506,6 +506,18 @@
                   if (isRtmpUrl($mediaEntry['baseUrl']) or isRtmpUrl($mediaEntry['url']))
                       LogError("Provided manifest is not a valid HDS manifest");
 
+                  // Use embedded auth information when available
+                  $idx = strpos($mediaEntry['url'], '?');
+                  if ($idx !== false)
+                    {
+                      $mediaEntry['queryString'] = substr($mediaEntry['url'], $idx);
+                      $mediaEntry['url']         = substr($mediaEntry['url'], 0, $idx);
+                      if (strlen($this->auth) != 0 and strcmp($this->auth, $mediaEntry['queryString']) != 0)
+                          LogDebug("Manifest overrides 'auth': " . $mediaEntry['queryString']);
+                    }
+                  else
+                      $mediaEntry['queryString'] = $this->auth;
+
                   if (isset($stream[strtolower('bootstrapInfoId')]))
                       $bootstrap = $xml->xpath("/ns:manifest/ns:bootstrapInfo[@id='" . $stream[strtolower('bootstrapInfoId')] . "']");
                   else
@@ -915,7 +927,7 @@
 
                   LogDebug("Adding fragment $fragNum to download queue");
                   $segNum = $this->GetSegmentFromFragment($fragNum);
-                  $cc->addDownload($this->fragUrl . "Seg" . $segNum . "-Frag" . $fragNum . $this->auth, $fragNum);
+                  $cc->addDownload($this->fragUrl . "Seg" . $segNum . "-Frag" . $fragNum . $this->media['queryString'], $fragNum);
                 }
 
               $downloads = $cc->checkDownloads();
