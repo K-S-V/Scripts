@@ -103,7 +103,7 @@
       function cURL($cookies = true, $cookie = 'Cookies.txt', $compression = 'gzip', $proxy = '')
         {
           $this->headers     = $this->headers();
-          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:20.0) Gecko/20100101 Firefox/20.0';
+          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:23.0) Gecko/20100101 Firefox/23.0';
           $this->compression = $compression;
           $this->cookies     = $cookies;
           if ($this->cookies == true)
@@ -581,29 +581,36 @@
           if (isset($this->media['bootstrapUrl']))
             {
               $this->bootstrapUrl = $this->media['bootstrapUrl'];
-              if ($cc->get($this->bootstrapUrl) != 200)
-                  LogError("Failed to get bootstrap info");
-              $bootstrapInfo = $cc->response;
+              $this->UpdateBootstrapInfo($cc, $this->bootstrapUrl);
             }
           else
+            {
               $bootstrapInfo = $this->media['bootstrap'];
-          ReadBoxHeader($bootstrapInfo, $pos, $boxType, $boxSize);
-          if ($boxType == "abst")
-              $this->ParseBootstrapBox($bootstrapInfo, $pos);
-          else
-              LogError("Failed to parse bootstrap info");
+              ReadBoxHeader($bootstrapInfo, $pos, $boxType, $boxSize);
+              if ($boxType == "abst")
+                  $this->ParseBootstrapBox($bootstrapInfo, $pos);
+              else
+                  LogError("Failed to parse bootstrap info");
+            }
         }
 
       function UpdateBootstrapInfo($cc, $bootstrapUrl)
         {
           $fragNum = $this->fragCount;
           $retries = 0;
+
+          // Backup original headers and add no-cache directive for fresh bootstrap info
+          $headers       = $cc->headers;
+          $cc->headers[] = "Cache-Control: no-cache";
+          $cc->headers[] = "Pragma: no-cache";
+
           while (($fragNum == $this->fragCount) and ($retries < 30))
             {
               $bootstrapPos = 0;
               LogDebug("Updating bootstrap info, Available fragments: " . $this->fragCount);
-              if ($cc->get($bootstrapUrl) != 200)
-                  LogError("Failed to refresh bootstrap info");
+              $status = $cc->get($bootstrapUrl);
+              if ($status != 200)
+                  LogError("Failed to refresh bootstrap info, Status: " . $status);
               $bootstrapInfo = $cc->response;
               ReadBoxHeader($bootstrapInfo, $bootstrapPos, $boxType, $boxSize);
               if ($boxType == "abst")
@@ -617,6 +624,9 @@
                   usleep(4000000);
                 }
             }
+
+          // Restore original headers
+          $cc->headers = $headers;
         }
 
       function ParseBootstrapBox($bootstrapInfo, $pos)
