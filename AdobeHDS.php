@@ -74,7 +74,7 @@
         {
           LogInfo("You can use script with following switches:\n");
           foreach (self::$ACCEPTED[0] as $key => $value)
-              LogInfo(sprintf(" --%-18s%s", $key, $value));
+              LogInfo(sprintf(" --%-18s %s", $key, $value));
           foreach (self::$ACCEPTED[1] as $key => $value)
               LogInfo(sprintf(" --%-9s%-9s%s", $key, " [param]", $value));
         }
@@ -118,7 +118,7 @@
         {
           $this->stopDownloads();
           if ((self::$ref <= 1) and file_exists($this->cookie_file))
-              unlink($this->cookie_file);
+              #unlink($this->cookie_file);
           self::$ref--;
         }
 
@@ -228,12 +228,12 @@
           curl_setopt($process, CURLOPT_PROXYTYPE, $type);
         }
 
-      function addDownload($url, $id)
+      function &addDownload($url, $id)
         {
           if (!isset($this->mh))
               $this->mh = curl_multi_init();
           if (isset($this->ch[$id]))
-              return false;
+              return $this->ch[$id];
           $download =& $this->ch[$id];
           $download['id']  = $id;
           $download['url'] = $url;
@@ -259,21 +259,59 @@
             }
           if ($this->fragProxy and $this->proxy)
               $this->setProxy($download['ch'], $this->proxy);
-          curl_multi_add_handle($this->mh, $download['ch']);
+          $rc = curl_multi_add_handle($this->mh, $download['ch']);
+          if ($rc !== 0)
+              LogError("cURL::addDownload: curl_multi_add_handle() failed: " . $rc);
           do
             {
               $this->mrc = curl_multi_exec($this->mh, $this->active);
             } while ($this->mrc == CURLM_CALL_MULTI_PERFORM);
-          return true;
+          if ($this->mrc != CURLM_OK)
+              LogError("cURL::addDownload: mrc != CURLM_OK: " . $this->mrc);
+          return $download;
         }
 
       function checkDownloads()
         {
           if (isset($this->mh))
             {
-              curl_multi_select($this->mh);
-              $this->mrc = curl_multi_exec($this->mh, $this->active);
+              // Ignore the return value because that retarded shit can return -1 for a while,
+              // and if you won't call curl_multi_exec, it will continue to return -1 forever.
+/* Sample log:
+Adding fragment 26 to download queue
+addDownload: mrc=0, active=1, CURLM_CALL_MULTI_PERFORM=-1
+checkDownloads: sel_rc=-1, mh: Resource id #34
+resource(34) of type (curl_multi)
+checkDownloads: mrc=0, active=1, prev_active=1, CURLM_OK=0, CURLM_CALL_MULTI_PERFORM=-1
+checkDownloads: sel_rc=-1, mh: Resource id #34
+resource(34) of type (curl_multi)
+checkDownloads: mrc=0, active=1, prev_active=1, CURLM_OK=0, CURLM_CALL_MULTI_PERFORM=-1
+checkDownloads: sel_rc=0, mh: Resource id #34
+resource(34) of type (curl_multi)
+checkDownloads: mrc=0, active=1, prev_active=1, CURLM_OK=0, CURLM_CALL_MULTI_PERFORM=-1
+checkDownloads: sel_rc=1, mh: Resource id #34
+resource(34) of type (curl_multi)
+checkDownloads: mrc=0, active=1, prev_active=1, CURLM_OK=0, CURLM_CALL_MULTI_PERFORM=-1
+checkDownloads: sel_rc=1, mh: Resource id #34
+resource(34) of type (curl_multi)
+checkDownloads: mrc=0, active=1, prev_active=1, CURLM_OK=0, CURLM_CALL_MULTI_PERFORM=-1
+checkDownloads: sel_rc=1, mh: Resource id #34
+resource(34) of type (curl_multi)
+checkDownloads: mrc=0, active=1, prev_active=1, CURLM_OK=0, CURLM_CALL_MULTI_PERFORM=-1
+*/
+              $sel_rc = curl_multi_select($this->mh);
+              //if ($sel_rc < 1) { return false; }
+
+              // "active" means "in progress", i.e. not ready for use (with curl_multi_info_read()
+              // et al.). No change in the active count means nothing became ready, so we can return.
+              $prev_active = $this->active;
+              do
+                {
+                  $this->mrc = curl_multi_exec($this->mh, $this->active);
+                } while ($this->mrc == CURLM_CALL_MULTI_PERFORM);
               if ($this->mrc != CURLM_OK)
+                  LogError("checkDownloads: mrc != CURLM_OK: " . $this->mrc);
+              if ($prev_active == $this->active)
                   return false;
               while ($info = curl_multi_info_read($this->mh))
                 {
@@ -282,12 +320,14 @@
                           break;
                   $array['id']  = $download['id'];
                   $array['url'] = $download['url'];
+                  $array['segNum'] = $download['segNum'];
+                  $array['fragNum'] = $download['fragNum'];
                   $info         = curl_getinfo($download['ch']);
                   if ($info['http_code'] == 0)
                     {
                       /* if curl fails due to network connectivity issues or some other reason it's *
                        * better to add some delay before next try to avoid busy loop.               */
-                      LogDebug("Fragment " . $download['id'] . ": " . curl_error($download['ch']));
+                      LogInfo("Fragment " . $download['id'] . ": " . curl_error($download['ch']));
                       usleep(1000000);
                       $array['status']   = false;
                       $array['response'] = "";
@@ -344,6 +384,18 @@
           LogError("cURL Error : $error");
         }
     }
+
+	class Manifest
+	{
+		const MANIFEST_REF_DEFAULT_PATTERN = '/(?:^|\\s)src\s*:\s*(["\'])(.+?)\\1/'; // "src:" followed by a single- or double-quoted string, i.e. (src: "...") or (src: '...').
+		const MANIFEST_REF_DEFAULT_PATTERN_GROUP = 2;
+		var $url = ''; // Direct URL of the f4m manifest XML file.
+		var $ref = ''; // The URL of the (HTML) document that contains the direct manifest URL.
+		var $ref_pattern = Manifest::MANIFEST_REF_DEFAULT_PATTERN; // Regular expression for extracting the direct manifest URL from the |ref| document.
+		var $ref_pattern_group = Manifest::MANIFEST_REF_DEFAULT_PATTERN_GROUP;
+		var $script = ''; // The URL of the PHP script that handles the retrieval of the manifest.
+		var $script_func = NULL; // The function created from the |script|.
+	}
 
   class F4F
     {
@@ -407,11 +459,13 @@
 
       function GetManifest($cc, $manifest)
         {
+LogDebug("GetManifest: manifest: '" . $manifest . "'");
           $status = $cc->get($manifest);
           if ($status == 403)
               LogError("Access Denied! Unable to download the manifest.");
           else if ($status != 200)
               LogError("Unable to download the manifest");
+LogDebug("GetManifest: cc->response (len=" . strlen($cc->response) . "): '" . $cc->response . "'");
           $xml = simplexml_load_string(trim($cc->response));
           if (!$xml)
               LogError("Failed to load xml");
@@ -423,6 +477,7 @@
 
       function ParseManifest($cc, $parentManifest)
         {
+          unset($this->media);
           LogInfo("Processing manifest info....");
           $xml = $this->GetManifest($cc, $parentManifest);
 
@@ -504,6 +559,17 @@
                   $mediaEntry['url']     = $stream['url'];
                   if (isRtmpUrl($mediaEntry['baseUrl']) or isRtmpUrl($mediaEntry['url']))
                       LogError("Provided manifest is not a valid HDS manifest");
+
+                  $idx = strpos($mediaEntry['url'], '?');
+                  if ($idx !== FALSE)
+                    {
+                      $mediaEntry['queryString'] = substr($mediaEntry['url'], $idx);
+                      $mediaEntry['url'] = substr($mediaEntry['url'], 0, $idx);
+                      if (strlen($this->auth) != 0 && strcmp($this->auth, $mediaEntry['queryString']) != 0)
+                          LogInfo("Manifest overrides 'auth': " . $mediaEntry['queryString']);
+                    }
+                    else
+                        $mediaEntry['queryString'] = $this->auth;
 
                   if (isset($stream[strtolower('bootstrapInfoId')]))
                       $bootstrap = $xml->xpath("/ns:manifest/ns:bootstrapInfo[@id='" . $stream[strtolower('bootstrapInfoId')] . "']");
@@ -833,7 +899,11 @@
           $start = 0;
           extract($opt, EXTR_IF_EXISTS);
 
-          $this->ParseManifest($cc, $manifest);
+          if ($manifest->ref || $manifest->script)
+		          $this->RefetchManifest($cc, $manifest, -1, $start); // FIXME: segNum -1 - smells or okay?
+		      else
+              $this->ParseManifest($cc, $manifest->url);
+
           $segNum  = $this->segStart;
           $fragNum = $this->fragStart;
           if ($start)
@@ -855,20 +925,16 @@
           $lastSlash          = strrpos($this->baseFilename, '/');
           if ($lastSlash !== false)
               $this->baseFilename = substr($this->baseFilename, $lastSlash + 1);
-          if (strpos($manifest, '?'))
-              $this->baseFilename = md5(substr($manifest, 0, strpos($manifest, '?'))) . '_' . $this->baseFilename;
+          if (strpos($manifest->url, '?'))
+              $this->baseFilename = md5(substr($manifest->url, 0, strpos($manifest->url, '?'))) . '_' . $this->baseFilename;
           else
-              $this->baseFilename = md5($manifest) . '_' . $this->baseFilename;
+              $this->baseFilename = md5($manifest->url) . '_' . $this->baseFilename;
           $this->baseFilename .= "Seg" . $segNum . "-Frag";
 
           if ($fragNum >= $this->fragCount)
               LogError("No fragment available for downloading");
 
-          if (isHttpUrl($this->media['url']))
-              $this->fragUrl = $this->media['url'];
-          else
-              $this->fragUrl = JoinUrl($this->baseUrl, $this->media['url']);
-          $this->fragUrl = NormalizePath($this->fragUrl);
+          $this->BuildFragUrl();
           LogDebug("Base Fragment Url:\n" . $this->fragUrl . "\n");
           LogDebug("Downloading Fragments:\n");
 
@@ -916,7 +982,7 @@
 
                   LogDebug("Adding fragment $fragNum to download queue");
                   $segNum = $this->GetSegmentFromFragment($fragNum);
-                  $cc->addDownload($this->fragUrl . "Seg" . $segNum . "-Frag" . $fragNum . $this->auth, $fragNum);
+				          $this->addFragmentDownload($cc, $segNum, $fragNum);
                 }
 
               $downloads = $cc->checkDownloads();
@@ -938,19 +1004,27 @@
                             }
                           else
                             {
-                              LogDebug("Fragment " . $download['id'] . " failed to verify");
-                              LogDebug("Adding fragment " . $download['id'] . " to download queue");
-                              $cc->addDownload($download['url'], $download['id']);
+                              LogInfo("Fragment " . $download['id'] . " failed to verify");
+                              $this->RefetchManifest($cc, $manifest, $download['segNum'], $download['fragNum']);
+                              LogInfo("Adding fragment " . $download['id'] . " to download queue");
+                              $this->addFragmentDownload($cc, $download['segNum'], $download['fragNum']);
+                              continue;
                             }
                         }
                       else if ($download['status'] === false)
                         {
                           LogDebug("Fragment " . $download['id'] . " failed to download");
                           LogDebug("Adding fragment " . $download['id'] . " to download queue");
-                          $cc->addDownload($download['url'], $download['id']);
+                          $this->addFragmentDownload($cc, $download['segNum'], $download['fragNum']);
                         }
                       else if ($download['status'] == 403)
-                          LogError("Access Denied! Unable to download fragments.");
+                        {
+                          LogInfo("Access denied for fragment " . $download['id']);
+                          $this->RefetchManifest($cc, $manifest, $download['segNum'], $download['fragNum']);
+                          LogInfo("Adding fragment " . $download['id'] . " to download queue");
+                          $this->addFragmentDownload($cc, $download['segNum'], $download['fragNum']);
+                          continue;
+                        }
                       else
                         {
                           LogDebug("Fragment " . $download['id'] . " doesn't exist, Status: " . $download['status']);
@@ -986,6 +1060,106 @@
           $cc->stopDownloads();
           $this->processed = true;
         }
+
+		function addFragmentDownload($cc, $segNum, $fragNum)
+		{
+			$dl = &$cc->addDownload($this->fragUrl . "Seg" . $segNum . "-Frag" . $fragNum . $this->media['queryString'], $fragNum);
+			$dl['segNum'] = $segNum;
+			$dl['fragNum'] = $fragNum;
+		}
+	 
+		function BuildFragUrl()
+		{
+			if (isHttpUrl($this->media['url']))
+				$this->fragUrl = $this->media['url'];
+			else
+				$this->fragUrl = JoinUrl($this->baseUrl, $this->media['url']);
+			$this->fragUrl = NormalizePath($this->fragUrl);
+		}
+
+
+		function RefetchManifest($cc, $manifest, $segNum, $fragNum)
+		{
+			if ($manifest->script)
+			{
+				if ( ! $manifest->script_func)
+				{
+					$s = '';
+LogInfo("Fetching the manifest script from: " . $manifest->script);
+					if (preg_match('/^https?:\/\//i', $manifest->script))
+					{
+						$http_rc = $cc->get($manifest->script);
+						if ($http_rc != 200)
+						{
+							LogError("Error fetching the manifest script: " . $http_rc);
+						}
+						$s = $cc->response;
+					}
+					else
+					{
+						$s = file_get_contents($manifest->script);
+					}
+					// Remove leading and trailing php tags (if any).
+					$s = preg_replace('/^\\s*<\\?php\\s*|\\s*\\?>\\s*$/', "", trim($s));
+					$s .= "\n";
+					$manifest->script_func = create_function('$segNum, $fragNum', $s);
+					if ( ! $manifest->script_func)
+					{
+						LogError("Error compiling the manifest script.");
+					}
+				}
+				$rc = call_user_func($manifest->script_func, $segNum, $fragNum);
+				if ($rc)
+				{
+					return;
+				}
+			}
+
+			$this->ParseManifestFromRef($cc, $manifest);
+		} // RefetchManifest()
+
+
+		function ParseManifestFromRef($cc, $manifest)
+		{
+			$this->GetManifestUrlFromRef($cc, $manifest);
+			$this->ParseManifestFromUrl($cc, $manifest);
+		}
+
+
+		function ParseManifestFromUrl($cc, $manifest)
+		{
+			$this->ParseManifest($cc, $manifest->url);
+			$this->BuildFragUrl();
+		}
+
+		function GetManifestUrlFromRef($cc, $manifest)
+		{
+			LogInfo("Fetching the manifest from: " . $manifest->ref);
+			$http_rc = $cc->get($manifest->ref);
+			if ($http_rc != 200)
+			{
+				LogError("Failed to retrieve the manifest-ref: http rc: " . $http_rc);
+			}
+			global $debug;
+			if ($debug)
+			{
+				$f = fopen("manifest-ref.txt", "wb");
+				fwrite($f, $cc->response, strlen($cc->response));
+				fclose($f);
+			}
+			if ( ! preg_match($manifest->ref_pattern, $cc->response, $m))
+			{
+				LogError(" ! preg_match()");
+			}
+			$manifest_url = rawurldecode($m[$manifest->ref_pattern_group]);
+			LogDebug("Manifest URL: '" . $manifest_url . "'");
+			if ( ! $manifest_url)
+			{
+				LogError(" ! manifest_url");
+			}
+			$manifest->url = $manifest_url;
+		} // GetManifestUrlFromRef()
+
 
       function VerifyFragment(&$frag)
         {
@@ -1502,7 +1676,7 @@
 
   function LogError($msg, $code = 1)
     {
-      LogInfo($msg);
+      LogInfo("\n\n" . $msg);
       exit($code);
     }
 
@@ -1713,7 +1887,8 @@
           'fproxy' => 'force proxy for downloading of fragments',
           'play' => 'dump stream to stdout for piping to media player',
           'rename' => 'rename fragments sequentially before processing',
-          'update' => 'update the script to current git version'
+          'update' => 'update the script to current git version',
+		      'manifest-ref-pattern-default' => 'Mutually exclusive with --manifest-ref-pattern. Use the default/preset settings: --manifest-ref-pattern ' . Manifest::MANIFEST_REF_DEFAULT_PATTERN . ' --manifest-ref-pattern-group ' . Manifest::MANIFEST_REF_DEFAULT_PATTERN_GROUP . ', i.e. will match patterns src: "..." and src: \'...\'.',
       ),
       1 => array(
           'auth' => 'authentication string for fragment requests',
@@ -1729,7 +1904,11 @@
           'quality' => 'selected quality level (low|medium|high) or exact bitrate',
           'referrer' => 'Referer to use for emulation of browser requests',
           'start' => 'start from specified fragment',
-          'useragent' => 'User-Agent to use for emulation of browser requests'
+          'useragent' => 'User-Agent to use for emulation of browser requests',
+		      'manifest-ref' => 'Mutually exclusive with --manifest. URL of the (HTML) document that contains the manifest URL.',
+		      'manifest-ref-pattern' => 'Mutually exclusive with --manifest-ref-pattern-default. Regular expression for extracting the manifest URL from the manifest-ref document. See preg_match(). Defaults to ' . Manifest::MANIFEST_REF_DEFAULT_PATTERN,
+		      'manifest-ref-pattern-group' => 'Mutually exclusive with --manifest-ref-pattern-default. Capturing group number/index of the manifest-ref-pattern that containt the manifest URL. Defaults to 1.',
+		      'manifest-script' => 'URL of the PHP script that handles the retrieval of the manifest.',
       )
   );
   $cli     = new CLI($options, true);
@@ -1774,6 +1953,8 @@
   $f4f->play =& $play;
   $f4f->rename =& $rename;
 
+  $manifest = new Manifest();
+
   // Process command line options
   if (isset($cli->params['unknown']))
       $baseFilename = $cli->params['unknown'][0];
@@ -1798,7 +1979,7 @@
   if ($cli->getParam('fragments'))
       $baseFilename = $cli->getParam('fragments');
   if ($cli->getParam('manifest'))
-      $manifest = $cli->getParam('manifest');
+      $manifest->url = $cli->getParam('manifest');
   if ($cli->getParam('outdir'))
       $outDir = $cli->getParam('outdir');
   if ($cli->getParam('outfile'))
@@ -1815,6 +1996,53 @@
       $start = $cli->getParam('start');
   if ($cli->getParam('useragent'))
       $cc->user_agent = $cli->getParam('useragent');
+
+  if ($cli->getParam('manifest-ref') !== false)
+    {
+      $manifest->ref = trim($cli->getParam('manifest-ref'));
+	    // Sanity check.
+	    if (strlen($manifest->url) != 0)
+	        LogError("Options 'manifest' and 'manifest-ref' are mutually exclusive.");
+	    if (strlen($manifest->ref) == 0)
+	        LogError("Option 'manifest-ref' can't be an empty string.");
+    }
+  if ($cli->getParam('manifest-ref-pattern-default'))
+    {
+	    // Sanity check.
+	    if ( ! $manifest->ref)
+  	      LogError("Option 'manifest-ref-pattern-default' requires the option 'manifest-ref'.");
+	    if ($cli->getParam('manifest-ref-pattern') !== false)
+	        LogError("Options 'manifest-ref-pattern' and 'manifest-ref-pattern-default' are mutually exclusive.");
+	    if ($cli->getParam('manifest-ref-pattern-group') !== false)
+	        LogError("Options 'manifest-ref-pattern-group' and 'manifest-ref-pattern-default' are mutually exclusive.");
+	  }
+  if ($cli->getParam('manifest-ref-pattern') !== false)
+    {
+      $manifest->ref_pattern = trim($cli->getParam('manifest-ref-pattern'));
+      $manifest->ref_pattern_group = 1;
+	    // Sanity check.
+	    if ( ! $manifest->ref)
+	        LogError("Option 'manifest-ref-pattern' requires the option 'manifest-ref'.");
+	    if (strlen($manifest->ref_pattern) == 0)
+	        LogError("Option 'manifest-ref-pattern' can't be an empty string.");
+	    $php_errormsg = '';
+	    preg_match($manifest->ref_pattern, '');
+	    if ($php_errormsg)
+	        LogError("Error validating 'manifest-ref-pattern' (did you forget the delimiters?): " . $php_errormsg);
+    }
+  if ($cli->getParam('manifest-ref-pattern-group') !== false)
+    {
+      $manifest->ref_pattern_group = trim($cli->getParam('manifest-ref-pattern-group'));
+	    // Sanity check.
+	    if ( ! $manifest->ref)
+	        LogError("Option 'manifest-ref-pattern-group' requires the option 'manifest-ref'.");
+	    if ( ! $cli->getParam('manifest-ref-pattern'))
+	        LogError("Option 'manifest-ref-pattern-group' requires the option 'manifest-ref-pattern'.");
+	    if ( ! preg_match('/^\d+$/', $manifest->ref_pattern_group))
+	        LogError("Invalid 'manifest-ref-pattern-group': must be a decimal integer number >= 0: " . $manifest->ref_pattern_group);
+	  }
+  if ($cli->getParam('manifest-script'))
+      $manifest->script = $cli->getParam('manifest-script');
 
   // Use custom referrer
   if ($referrer)
@@ -1863,10 +2091,10 @@
       $metadata = false;
 
   // Download fragments when manifest is available
-  if ($manifest)
+  if ($manifest->url || $manifest->ref || $manifest->script)
     {
-      if (!isHttpUrl($manifest))
-          $manifest = "http://" . $manifest;
+      if ($manifest->url && !isHttpUrl($manifest->url))
+          $manifest->url = "http://" . $manifest->url;
       $opt = array(
           'start' => $start,
           'tDuration' => $duration,
