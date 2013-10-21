@@ -74,9 +74,9 @@
         {
           LogInfo("You can use script with following switches:\n");
           foreach (self::$ACCEPTED[0] as $key => $value)
-              LogInfo(sprintf(" --%-18s%s", $key, $value));
+              LogInfo(sprintf(" --%-17s %s", $key, $value));
           foreach (self::$ACCEPTED[1] as $key => $value)
-              LogInfo(sprintf(" --%-9s%-9s%s", $key, " [param]", $value));
+              LogInfo(sprintf(" --%-9s%-8s %s", $key, " [param]", $value));
         }
 
       function error($msg)
@@ -450,11 +450,8 @@
                       $bitrate = $count++;
                   $entry =& $childManifests[$bitrate];
                   $entry['bitrate'] = $bitrate;
-                  $href             = GetString($childManifest['href']);
-                  if (!isHttpUrl($href))
-                      $href = JoinUrl($baseUrl, $href);
-                  $entry['url'] = NormalizePath($href);
-                  $entry['xml'] = $this->GetManifest($cc, $entry['url']);
+                  $entry['url']     = AbsoluteUrl($baseUrl, GetString($childManifest['href']));
+                  $entry['xml']     = $this->GetManifest($cc, $entry['url']);
                 }
               unset($entry, $childManifest);
             }
@@ -511,10 +508,9 @@
                       $bootstrap = $xml->xpath("/ns:manifest/ns:bootstrapInfo");
                   if (isset($bootstrap[0]['url']))
                     {
-                      $bootstrapUrl = GetString($bootstrap[0]['url']);
-                      if (!isHttpUrl($bootstrapUrl))
-                          $bootstrapUrl = JoinUrl($mediaEntry['baseUrl'], $bootstrapUrl);
-                      $mediaEntry['bootstrapUrl'] = NormalizePath($bootstrapUrl) . $this->auth;
+                      $mediaEntry['bootstrapUrl'] = AbsoluteUrl($mediaEntry['baseUrl'], GetString($bootstrap[0]['url']));
+                      if (strpos($mediaEntry['bootstrapUrl'], '?') === false)
+                          $mediaEntry['bootstrapUrl'] .= $this->auth;
                     }
                   else
                       $mediaEntry['bootstrap'] = base64_decode(GetString($bootstrap[0]));
@@ -864,11 +860,7 @@
           if ($fragNum >= $this->fragCount)
               LogError("No fragment available for downloading");
 
-          if (isHttpUrl($this->media['url']))
-              $this->fragUrl = $this->media['url'];
-          else
-              $this->fragUrl = JoinUrl($this->baseUrl, $this->media['url']);
-          $this->fragUrl = NormalizePath($this->fragUrl);
+          $this->fragUrl = AbsoluteUrl($this->baseUrl, $this->media['url']);
           LogDebug("Base Fragment Url:\n" . $this->fragUrl . "\n");
           LogDebug("Downloading Fragments:\n");
 
@@ -1445,6 +1437,13 @@
       WriteByte($frag, $fragPos + 7, ($packetTS & 0xFF000000) >> 24);
     }
 
+  function AbsoluteUrl($baseUrl, $url)
+    {
+      if (!isHttpUrl($url))
+          $url = JoinUrl($baseUrl, $url);
+      return NormalizePath($url);
+    }
+
   function GetString($object)
     {
       return trim(strval($object));
@@ -1452,18 +1451,12 @@
 
   function isHttpUrl($url)
     {
-      if (strncasecmp($url, "http", 4) == 0)
-          return true;
-      else
-          return false;
+      return (strncasecmp($url, "http", 4) == 0) ? true : false;
     }
 
   function isRtmpUrl($url)
     {
-      if (preg_match('/^rtm(p|pe|pt|pte|ps|pts|fp):\/\//i', $url))
-          return true;
-      else
-          return false;
+      return (preg_match('/^rtm(p|pe|pt|pte|ps|pts|fp):\/\//i', $url)) ? true : false;
     }
 
   function JoinUrl($firstUrl, $secondUrl)
@@ -1865,9 +1858,8 @@
   // Download fragments when manifest is available
   if ($manifest)
     {
-      if (!isHttpUrl($manifest))
-          $manifest = "http://" . $manifest;
-      $opt = array(
+      $manifest = AbsoluteUrl("http://", $manifest);
+      $opt      = array(
           'start' => $start,
           'tDuration' => $duration,
           'filesize' => $filesize
