@@ -1764,14 +1764,17 @@
     }
 
   // Check for required extensions
-  $extensions = array(
+  $required_extensions = array(
       "bcmath",
       "curl",
       "SimpleXML"
   );
-  foreach ($extensions as $extension)
-      if (!extension_loaded($extension))
-          LogError("You don't have '$extension' extension installed. please install it before continuing.");
+  $missing_extensions  = array_diff($required_extensions, get_loaded_extensions());
+  if ($missing_extensions)
+    {
+      $msg = "You have to install the following extension(s) to continue: '" . implode("', '", $missing_extensions) . "'";
+      LogError($msg);
+    }
 
   // Initialize classes
   $cc  = new cURL();
