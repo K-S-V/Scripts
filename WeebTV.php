@@ -90,7 +90,7 @@
       function cURL($cookies = true, $cookie = 'Cookies.txt', $compression = 'gzip', $proxy = '')
         {
           $this->headers     = $this->headers();
-          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:21.0) Gecko/20100101 Firefox/21.0';
+          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:25.0) Gecko/20100101 Firefox/25.0';
           $this->compression = $compression;
           $this->cookies     = $cookies;
           if ($this->cookies == true)
@@ -235,7 +235,7 @@
       if ($cli->getParam('list'))
         {
           foreach ($items as $name => $url)
-              printf("%-25.25s = %s\n", preg_replace('/=/', '-', $name), $url);
+              printf("%-25.25s = %s" . PHP_EOL, preg_replace('/=/', '-', $name), $url);
           exit(0);
         }
 
@@ -260,11 +260,11 @@
                       printf($format, $cell, KeyName($items, $cell - 1));
                 }
             }
-          printf("\n\n");
+          printf(PHP_EOL . PHP_EOL);
         }
     }
 
-  function GetResponse($cc, $url, $data)
+  function GetApiResponse($cc, $url, $data)
     {
       $response = $cc->post($url, $data);
       $result   = explode("\r\n\r\n", $response, 2);
@@ -276,6 +276,24 @@
           $Params[$name] = urldecode($temp[1]);
         }
       return $Params;
+    }
+
+  function GetHtmlResponse($cc, $url)
+    {
+      $retries = 0;
+      while ($retries < 5)
+        {
+          $html = $cc->get($url);
+          if (preg_match("/NAME=\"robots\"/i", $html))
+            {
+              $cc->get("http://weeb.tv/_Incapsula_Resource?SWHANEDL=807917559759548716,1918358409640862410,9717984079971852691,283468");
+              $retries++;
+              usleep(1000000);
+            }
+          else
+              break;
+        }
+      return $html;
     }
 
   function KeyName(array $a, $pos)
@@ -308,7 +326,7 @@
       global $cc, $logged_in;
       if ($logged_in)
         {
-          $cc->get("http://weeb.tv/account/logout");
+          GetHtmlResponse($cc, "http://weeb.tv/account/logout");
           $logged_in = false;
         }
     }
@@ -376,16 +394,15 @@
   function ShowChannel($url, $filename)
     {
       global $cc, $cli, $format, $password, $PremiumUser, $quality, $username, $vlc, $windows;
-      LogInfo("Retrieving html....");
+      LogInfo("Retrieving info....");
       $cc->headers = $cc->headers();
-      $html        = $cc->get($url);
-      preg_match('/flashvars.*?cid[^\d]+?(\d+)/is', $html, $cid);
-      if (!isset($cid[1]))
+      $cid         = substr($url, strrpos($url, '/') + 1);
+      if (!$cid)
           Close("No channel id found");
 
       // Retrieve rtmp stream info
-      $cc->headers[] = "Referer: http://static2.weeb.tv/static2/player.swf";
-      $Params        = GetResponse($cc, "http://weeb.tv/api/setPlayer", "cid=$cid[1]&watchTime=0&firstConnect=1&ip=NaN");
+      $cc->headers[] = "Referer: http://static.weeb.tv/player.swf";
+      $Params        = GetApiResponse($cc, "http://weeb.tv/api/setPlayer", "cid=" . $cid . "&watchTime=0&firstConnect=1&ip=NaN");
       if (isset($Params[0]) and $Params[0] <= 0)
           Close("Server refused to send required parameters.");
       $rtmp         = $Params["10"];
@@ -415,7 +432,7 @@
 
       // Retrieve authentication token
       if (!isset($Params["73"]))
-          $Params = GetResponse($cc, "http://weeb.tv/setplayer", "cid=$cid[2]&watchTime=0&firstConnect=0&ip=NaN");
+          $Params = GetApiResponse($cc, "http://weeb.tv/api/setPlayer", "cid=" . $cid . "&watchTime=0&firstConnect=0&ip=NaN");
 
       if (isset($Params["73"]))
           $token = $Params["73"];
@@ -431,7 +448,7 @@
       $filename = SafeFileName($filename);
       if (file_exists($filename . ".flv"))
           unlink($filename . ".flv");
-      $basecmd = 'rtmpdump -r "' . $rtmp . "/" . $playpath . '" -W "http://static2.weeb.tv/static2/player.swf" --weeb "' . $token . "\" --live";
+      $basecmd = 'rtmpdump -r "' . $rtmp . "/" . $playpath . '" -W "http://static.weeb.tv/player.swf" --weeb "' . $token . "\" --live";
       $command = $basecmd . " | \"$vlc\" --meta-title \"$filename\" -";
 
       if ($cli->getParam('print'))
@@ -519,7 +536,7 @@
     }
   else
     {
-      $html = $cc->get("http://weeb.tv/channels/live");
+      $html = GetHtmlResponse($cc, "http://weeb.tv/channels/live");
       preg_match('/<ul class="channels">(.*?)<\/ul>/is', $html, $html);
       $html = $html[1];
       preg_match_all('/<fieldset[^>]+>(.*?)<\/fieldset>/is', $html, $fieldSets);
