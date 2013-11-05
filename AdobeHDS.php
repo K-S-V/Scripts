@@ -1366,7 +1366,7 @@
     {
       $hi    = sprintf("%u", ReadInt32($str, $pos));
       $lo    = sprintf("%u", ReadInt32($str, $pos + 4));
-      $int64 = bcadd(bcmul($hi, "4294967296"), $lo);
+      $int64 = ( $hi << 32 ) | $lo;
       return $int64;
     }
 
@@ -1745,7 +1745,6 @@
 
   // Check for required extensions
   $extensions = array(
-      "bcmath",
       "curl",
       "SimpleXML"
   );
