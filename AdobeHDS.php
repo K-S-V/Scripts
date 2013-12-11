@@ -767,10 +767,13 @@
               $this->fragCount += $current['fragmentsPerSegment'];
               $prev = $current;
             }
-          if ($this->fragCount > 0)
+          if (!($this->fragCount & 0x80000000))
               $this->fragCount += $firstFragment['firstFragment'] - 1;
-          else
+          if ($this->fragCount & 0x80000000)
+            {
+              $this->fragCount  = 0;
               $invalidFragCount = true;
+            }
           if ($this->fragCount < $lastFragment['firstFragment'])
               $this->fragCount = $lastFragment['firstFragment'];
 
