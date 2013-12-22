@@ -96,7 +96,7 @@
   class cURL
     {
       var $headers, $user_agent, $compression, $cookie_file;
-      var $active, $cert_check, $fragProxy, $proxy, $response;
+      var $active, $cert_check, $fragProxy, $maxSpeed, $proxy, $response;
       var $mh, $ch, $mrc;
       static $ref = 0;
 
@@ -110,6 +110,7 @@
               $this->cookie($cookie);
           $this->cert_check = false;
           $this->fragProxy  = false;
+          $this->maxSpeed   = 0;
           $this->proxy      = $proxy;
           self::$ref++;
         }
@@ -259,6 +260,8 @@
             }
           if ($this->fragProxy and $this->proxy)
               $this->setProxy($download['ch'], $this->proxy);
+          if ($this->maxSpeed > 0)
+              curl_setopt($process, CURLOPT_MAX_RECV_SPEED_LARGE, $this->maxSpeed);
           curl_multi_add_handle($this->mh, $download['ch']);
           do
             {
@@ -1685,6 +1688,7 @@
   $fragCount    = 0;
   $fragNum      = 0;
   $manifest     = "";
+  $maxSpeed     = 0;
   $metadata     = true;
   $outDir       = "";
   $outFile      = "";
@@ -1713,6 +1717,7 @@
           'fragments' => 'base filename for fragments',
           'fixwindow' => 'timestamp gap between frames to consider as timeshift',
           'manifest' => 'manifest file for downloading of fragments',
+          'maxspeed' => 'maximum bandwidth consumption (KB) for fragment downloading',
           'outdir' => 'destination folder for output file',
           'outfile' => 'filename to use for output file',
           'parallel' => 'number of fragments to download simultaneously',
@@ -1790,6 +1795,8 @@
       $baseFilename = $cli->getParam('fragments');
   if ($cli->getParam('manifest'))
       $manifest = $cli->getParam('manifest');
+  if ($cli->getParam('maxspeed'))
+      $maxSpeed = $cli->getParam('maxspeed');
   if ($cli->getParam('outdir'))
       $outDir = $cli->getParam('outdir');
   if ($cli->getParam('outfile'))
@@ -1828,6 +1835,10 @@
       else
           LogError("Failed to update script");
     }
+
+  // Set overall maximum bandwidth for fragment downloading
+  $f4f->maxSpeed = ($maxSpeed * 1024) / $f4f->parallel;
+  LogDebug(sprintf("Setting maximum speed to %.2f KB per fragment (overall $maxSpeed KB)", $f4f->maxSpeed / 1024));
 
   // Create output directory
   if ($outDir)
