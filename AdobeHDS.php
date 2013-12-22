@@ -103,7 +103,7 @@
       function cURL($cookies = true, $cookie = 'Cookies.txt', $compression = 'gzip', $proxy = '')
         {
           $this->headers     = $this->headers();
-          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:23.0) Gecko/20100101 Firefox/23.0';
+          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:26.0) Gecko/20100101 Firefox/26.0';
           $this->compression = $compression;
           $this->cookies     = $cookies;
           if ($this->cookies == true)
@@ -949,6 +949,12 @@
                         }
                       else if ($download['status'] == 403)
                           LogError("Access Denied! Unable to download fragments.");
+                      else if ($download['status'] == 503)
+                        {
+                          LogDebug("Fragment " . $download['id'] . " seems temporary unavailable");
+                          LogDebug("Adding fragment " . $download['id'] . " to download queue");
+                          $cc->addDownload($download['url'], $download['id']);
+                        }
                       else
                         {
                           LogDebug("Fragment " . $download['id'] . " doesn't exist, Status: " . $download['status']);
