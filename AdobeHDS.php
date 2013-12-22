@@ -1054,13 +1054,8 @@
               $fixedTS   = $lastTS + FRAMEFIX_STEP;
               if (($this->baseTS == INVALID_TIMESTAMP) and (($packetType == AUDIO) or ($packetType == VIDEO)))
                   $this->baseTS = $packetTS;
-              if ($this->baseTS > 1000)
-                {
-                  if ($packetTS >= $this->baseTS)
-                      $packetTS -= $this->baseTS;
-                  else
-                      $packetTS = $fixedTS;
-                }
+              if (($this->baseTS > 1000) and ($packetTS >= $this->baseTS))
+                  $packetTS -= $this->baseTS;
               if ($lastTS != INVALID_TIMESTAMP)
                 {
                   $timeShift = $packetTS - $lastTS;
