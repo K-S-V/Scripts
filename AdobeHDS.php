@@ -1843,8 +1843,11 @@
     }
 
   // Set overall maximum bandwidth for fragment downloading
-  $f4f->maxSpeed = ($maxSpeed * 1024) / $f4f->parallel;
-  LogDebug(sprintf("Setting maximum speed to %.2f KB per fragment (overall $maxSpeed KB)", $f4f->maxSpeed / 1024));
+  if ($maxSpeed > 0)
+    {
+      $cc->maxSpeed = ($maxSpeed * 1024) / $f4f->parallel;
+      LogDebug(sprintf("Setting maximum speed to %.2f KB per fragment (overall $maxSpeed KB)", $cc->maxSpeed / 1024));
+    }
 
   // Create output directory
   if ($outDir)
