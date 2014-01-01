@@ -7,6 +7,7 @@
   define('CODEC_ID_AAC', 0x0A);
   define('AVC_SEQUENCE_HEADER', 0x00);
   define('AAC_SEQUENCE_HEADER', 0x00);
+  define('AVC_NALU', 0x01);
   define('AVC_SEQUENCE_END', 0x02);
   define('FRAMEFIX_STEP', 40);
   define('INVALID_TIMESTAMP', -1);
@@ -390,6 +391,16 @@
                     }
                   if ($packetSize > 0)
                     {
+                      $pts = $packetTS;
+                      if (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType == AVC_NALU))
+                        {
+                          $cts = ReadInt24($flvTag, $tagPos + $tagHeaderLen + 2);
+                          $cts = ($cts + 0xff800000) ^ 0xff800000;
+                          $pts = $packetTS + $cts;
+                          if ($cts != 0)
+                              LogDebug("DTS: $packetTS CTS: $cts PTS: $pts");
+                        }
+
                       // Check for packets with non-monotonic video timestamps and fix them
                       if (!(($CodecID == CODEC_ID_AVC) and (($AVC_PacketType == AVC_SEQUENCE_HEADER) or ($AVC_PacketType == AVC_SEQUENCE_END) or $prevAVC_Header)))
                           if (($prevVideoTS != INVALID_TIMESTAMP) and ($packetTS <= $prevVideoTS))
