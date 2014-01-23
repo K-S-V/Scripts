@@ -343,15 +343,20 @@
       if ($type == 1)
         {
           // Create codec tag
-          $codecTag = " ";
-          WriteByte($codecTag, 0, 7 | ($keyframe ? 16 : 32));
-          WriteByte($codecTag, 1, ($config ? 0 : 1));
-          WriteInt24($codecTag, 2, 0);
+          if ($version >= 2)
+            {
+              $codecTag = " ";
+              WriteByte($codecTag, 0, 7 | ($keyframe ? 16 : 32));
+              WriteByte($codecTag, 1, ($config ? 0 : 1));
+              WriteInt24($codecTag, 2, 0);
+            }
+          else
+              $codecTag = "";
 
           // Create flv tag
           $flvTag = " ";
           WriteByte($flvTag, 0, 9);
-          WriteInt24($flvTag, 1, $rawLength + 5);
+          WriteInt24($flvTag, 1, $rawLength + strlen($codecTag));
           WriteFlvTimestamp($flvTag, 0, $time);
           WriteInt24($flvTag, 8, 0);
 
@@ -373,14 +378,19 @@
       if ($type == 2)
         {
           // Create codec tag
-          $codecTag = " ";
-          WriteByte($codecTag, 0, 175);
-          WriteByte($codecTag, 1, ($config ? 0 : 1));
+          if ($version >= 2)
+            {
+              $codecTag = " ";
+              WriteByte($codecTag, 0, 175);
+              WriteByte($codecTag, 1, ($config ? 0 : 1));
+            }
+          else
+              $codecTag = "";
 
           // Create flv tag
           $flvTag = " ";
           WriteByte($flvTag, 0, 8);
-          WriteInt24($flvTag, 1, $rawLength + 2);
+          WriteInt24($flvTag, 1, $rawLength + strlen($codecTag));
           WriteFlvTimestamp($flvTag, 0, $time);
           WriteInt24($flvTag, 8, 0);
 
