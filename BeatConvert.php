@@ -307,6 +307,7 @@
   $decTableLen = strlen($decTable);
   while ($decPos < $decTableLen)
     {
+      // Read table entry
       $flags = ReadByte($decTable, $decPos);
       if ($flags == 0)
           break;
@@ -315,7 +316,6 @@
       $keyframe  = ($flags & 2) > 0 ? 1 : 0;
       $config    = ($flags & 1) > 0 ? 1 : 0;
       LogDebug("\nType: $type, Encrypted: $encrypted, KeyFrame: $keyframe, Config: $config");
-
       $time       = ReadInt32($decTable, $decPos + 1);
       $dataLength = ReadInt32($decTable, $decPos + 5);
       $decPos += 9;
@@ -343,7 +343,7 @@
       if ($type == 1)
         {
           // Create codec tag
-          if ($version >= 2)
+          if ($version == 2)
             {
               $codecTag = " ";
               WriteByte($codecTag, 0, 7 | ($keyframe ? 16 : 32));
@@ -365,12 +365,7 @@
           WriteInt32($videoTag, strlen($videoTag), strlen($videoTag));
 
           if ($config)
-            {
-              if ($avcCfgW)
-                  $videoTag = "";
-              else
-                  $avcCfgW = true;
-            }
+              $avcCfgW ? ($videoTag = "") : ($avcCfgW = true);
           $flvData .= $videoTag;
         }
 
@@ -378,7 +373,7 @@
       if ($type == 2)
         {
           // Create codec tag
-          if ($version >= 2)
+          if ($version == 2)
             {
               $codecTag = " ";
               WriteByte($codecTag, 0, 175);
@@ -399,12 +394,7 @@
           WriteInt32($audioTag, strlen($audioTag), strlen($audioTag));
 
           if ($config)
-            {
-              if ($aacCfgW)
-                  $audioTag = "";
-              else
-                  $aacCfgW = true;
-            }
+              $aacCfgW ? ($audioTag = "") : ($aacCfgW = true);
           $flvData .= $audioTag;
         }
 
