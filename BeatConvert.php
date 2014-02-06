@@ -233,6 +233,7 @@
   $aacCfgW    = false;
   $beatFile   = "";
   $debug      = false;
+  $flv        = "";
   $flvData    = "";
   $outFile    = "";
   $showHeader = true;
@@ -301,6 +302,16 @@
   $td = mcrypt_module_open('rijndael-128', '', 'cbc', '');
   mcrypt_generic_init($td, $key, $iv);
   $decTable = mdecrypt_generic($td, $encTable);
+
+  // Check for existing flv file
+  if (!$outFile)
+      $outFile = "Final.flv";
+  if (file_exists($outFile))
+    {
+      $flv     = fopen($outFile, 'a');
+      $avcCfgW = true;
+      $aacCfgW = true;
+    }
 
   // Decode lookup table
   $decPos      = 0;
@@ -408,12 +419,11 @@
     }
 
   // Write output file
-  if (!$outFile)
-      $outFile = RemoveExtension($beatFile) . ".flv";
-  $flv = WriteFlvFile($outFile);
+  if (!is_resource($flv))
+      $flv = WriteFlvFile($outFile);
   fwrite($flv, $flvData);
-
   fclose($flv);
+
   $timeEnd   = microtime(true);
   $timeTaken = sprintf("%.2f", $timeEnd - $timeStart);
   LogInfo(sprintf("Processed input file in %s seconds", $timeTaken));
