@@ -498,6 +498,8 @@
                       $bitrate = $childManifest['bitrate'];
                   else
                       $bitrate = $count++;
+                  while (isset($this->media[$bitrate]))
+                      $bitrate++;
                   $streamId = isset($stream[strtolower('streamId')]) ? $stream[strtolower('streamId')] : "";
                   $mediaEntry =& $this->media[$bitrate];
 
