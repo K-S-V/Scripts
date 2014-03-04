@@ -37,16 +37,16 @@
                   if ($isSwitch)
                       $arg = preg_replace('/^-+/', '', $arg);
 
-                  if ($paramSwitch && $isSwitch)
+                  if ($paramSwitch and $isSwitch)
                       $this->error("[param] expected after '$paramSwitch' switch (" . self::$ACCEPTED[1][$paramSwitch] . ')');
-                  else if (!$paramSwitch && !$isSwitch)
+                  else if (!$paramSwitch and !$isSwitch)
                     {
                       if ($handleUnknown)
                           $this->params['unknown'][] = $arg;
                       else
                           $this->error("'$arg' is an invalid option, use --help to display valid switches.");
                     }
-                  else if (!$paramSwitch && $isSwitch)
+                  else if (!$paramSwitch and $isSwitch)
                     {
                       if (isset($this->params[$arg]))
                           $this->error("'$arg' switch can't occur more than once");
@@ -57,7 +57,7 @@
                       else if (!isset(self::$ACCEPTED[0][$arg]))
                           $this->error("there's no '$arg' switch, use --help to display all switches.");
                     }
-                  else if ($paramSwitch && !$isSwitch)
+                  else if ($paramSwitch and !$isSwitch)
                     {
                       $this->params[$paramSwitch] = $arg;
                       $paramSwitch                = false;
@@ -67,7 +67,7 @@
 
           // Final check
           foreach ($this->params as $k => $v)
-              if (isset(self::$ACCEPTED[1][$k]) && $v === true)
+              if (isset(self::$ACCEPTED[1][$k]) and $v === true)
                   $this->error("[param] expected after '$k' switch (" . self::$ACCEPTED[1][$k] . ')');
         }
 
@@ -1550,7 +1550,7 @@
 
       foreach ($inSegs as $seg)
         {
-          if ($seg == '' || $seg == '.')
+          if ($seg == '' or $seg == '.')
               continue;
           if ($seg == '..')
               array_pop($outSegs);
@@ -1677,13 +1677,13 @@
       if ($strict)
         {
           foreach ($haystack as $item)
-              if (isset($item[$needle_field]) && $item[$needle_field] === $needle)
+              if (isset($item[$needle_field]) and $item[$needle_field] === $needle)
                   return true;
         }
       else
         {
           foreach ($haystack as $item)
-              if (isset($item[$needle_field]) && $item[$needle_field] == $needle)
+              if (isset($item[$needle_field]) and $item[$needle_field] == $needle)
                   return true;
         }
       return false;
@@ -1694,13 +1694,13 @@
       if ($strict)
         {
           foreach ($haystack as $item)
-              if (isset($item[$needle_field]) && $item[$needle_field] === $needle)
+              if (isset($item[$needle_field]) and $item[$needle_field] === $needle)
                   return $item[$value_field];
         }
       else
         {
           foreach ($haystack as $item)
-              if (isset($item[$needle_field]) && $item[$needle_field] == $needle)
+              if (isset($item[$needle_field]) and $item[$needle_field] == $needle)
                   return $item[$value_field];
         }
       return false;
