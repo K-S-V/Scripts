@@ -863,6 +863,8 @@
           $this->lastFrag  = $fragNum;
           $opt['cc']       = $cc;
           $opt['duration'] = 0;
+          $firstFragment   = reset($this->fragTable);
+          LogInfo(sprintf("Fragments Total: %s, First: %s, Start: %s, Parallel: %s", $this->fragCount, $firstFragment['firstFragment'], $fragNum + 1, $this->parallel));
 
           // Extract baseFilename
           $this->baseFilename = $this->media['url'];
