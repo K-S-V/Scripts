@@ -258,7 +258,10 @@
           if ($timeShift > $fixWindow)
             {
               LogDebug("Timestamp gap detected: PacketTS=" . $packetTS . " LastTS=" . $lastTS . " Timeshift=" . $timeShift);
-              $baseTS += $timeShift - FRAMEFIX_STEP;
+              if ($baseTS < $packetTS)
+                  $baseTS += $timeShift - FRAMEFIX_STEP;
+              else
+                  $baseTS = $timeShift - FRAMEFIX_STEP;
               $packetTS = $fixedTS;
             }
           else

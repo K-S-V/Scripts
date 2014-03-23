@@ -1088,7 +1088,10 @@
                   if ($timeShift > $this->fixWindow)
                     {
                       LogDebug("Timestamp gap detected: PacketTS=" . $packetTS . " LastTS=" . $lastTS . " Timeshift=" . $timeShift, $debug);
-                      $this->baseTS += $timeShift - FRAMEFIX_STEP;
+                      if ($this->baseTS < $packetTS)
+                          $this->baseTS += $timeShift - FRAMEFIX_STEP;
+                      else
+                          $this->baseTS = $timeShift - FRAMEFIX_STEP;
                       $packetTS = $fixedTS;
                     }
                   else
@@ -1281,7 +1284,10 @@
                       else if (($packetType == 40) or ($packetType == 41))
                           LogError("This stream is encrypted with FlashAccess DRM. Decryption of such streams isn't currently possible with this script.", 2);
                       else
-                          LogError("Unknown packet type " . $packetType . " encountered! Unable to proceed.");
+                        {
+                          LogInfo("Unknown packet type " . $packetType . " encountered! Unable to process fragment $fragNum");
+                          break 2;
+                        }
               }
               $fragPos += $totalTagLen;
             }
