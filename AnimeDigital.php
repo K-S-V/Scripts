@@ -9,7 +9,7 @@
   // Generate key
   $td  = mcrypt_module_open('rijndael-128', '', 'ecb', '');
   $iv  = str_repeat("\x00", 16);
-  $key = pack('H*', "32344150066d43644c5042725d");
+  $key = pack("C*", 48, 99, 101, 102, 56, 56, 56, 101, 56, 48, 99, 51, 49, 48, 57, 49, 54, 102, 55, 101, 97, 98, 100, 97, 54, 100, 51, 97, 51, 98, 57, 52);
   $key = $key . str_repeat("\x00", 32 - strlen($key));
   mcrypt_generic_init($td, $key, $iv);
   $key = mcrypt_generic($td, $key);
