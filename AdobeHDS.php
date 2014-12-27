@@ -262,7 +262,7 @@
           if ($this->fragProxy and $this->proxy)
               $this->setProxy($download['ch'], $this->proxy);
           if ($this->maxSpeed > 0)
-              curl_setopt($process, CURLOPT_MAX_RECV_SPEED_LARGE, $this->maxSpeed);
+              curl_setopt($download['ch'], CURLOPT_MAX_RECV_SPEED_LARGE, $this->maxSpeed);
           curl_multi_add_handle($this->mh, $download['ch']);
           do
             {
