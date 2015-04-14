@@ -286,7 +286,7 @@
   $filePos    = $filePos + 3 + $lookupSize;
   LogDebug("Version: $version, Quality: $quality, LookupSize: $lookupSize");
 
-  // Retreive encryption key and iv
+  // Retrieve encryption key and iv
   $key = "";
   $iv  = "";
   for ($i = 0; $i < 32; $i += 2)

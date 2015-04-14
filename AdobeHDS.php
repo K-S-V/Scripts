@@ -875,10 +875,12 @@
           if ($lastSlash !== false)
               $this->baseFilename = substr($this->baseFilename, $lastSlash + 1);
           if (strpos($manifest, '?'))
-              $this->baseFilename = md5(substr($manifest, 0, strpos($manifest, '?'))) . '_' . $this->baseFilename;
+              $manifestHash = md5(substr($manifest, 0, strpos($manifest, '?')));
           else
-              $this->baseFilename = md5($manifest) . '_' . $this->baseFilename;
-          $this->baseFilename .= "Seg" . $segNum . "-Frag";
+              $manifestHash = md5($manifest);
+          if (strlen($this->baseFilename) > 32)
+              $this->baseFilename = md5($this->baseFilename);
+          $this->baseFilename = $manifestHash . "_" . $this->baseFilename . "_Seg" . $segNum . "-Frag";
 
           if ($fragNum >= $this->fragCount)
               LogError("No fragment available for downloading");
@@ -1039,7 +1041,10 @@
         {
           $debug = $this->debug;
           $flv   = false;
+          $test  = false;
           extract($opt, EXTR_IF_EXISTS);
+          if ($test)
+              $debug = false;
 
           $flvData  = "";
           $fragPos  = 0;
@@ -1316,7 +1321,7 @@
                       LogDebug("Writing fragment " . $frag['id'] . " to flv file");
                       if (!isset($opt['file']))
                         {
-                          $opt['debug'] = false;
+                          $opt['test'] = true;
                           if ($this->play)
                               $outFile = STDOUT;
                           else if ($this->outFile)
@@ -1339,7 +1344,7 @@
                           if ($this->metadata)
                               WriteMetadata($this, $opt['file']);
 
-                          $opt['debug'] = $this->debug;
+                          $opt['test'] = false;
                           $this->InitDecoder();
                         }
                       $flvData = $this->DecodeFragment($frag['response'], $frag['id'], $opt);
@@ -1390,6 +1395,12 @@
       return $int[1];
     }
 
+  function ReadInt16($str, $pos)
+    {
+      $int32 = unpack('N', "\x00\x00" . substr($str, $pos, 2));
+      return $int32[1];
+    }
+
   function ReadInt24($str, $pos)
     {
       $int32 = unpack('N', "\x00" . substr($str, $pos, 3));
@@ -1408,6 +1419,12 @@
       $lo    = sprintf("%u", ReadInt32($str, $pos + 4));
       $int64 = bcadd(bcmul($hi, "4294967296"), $lo);
       return $int64;
+    }
+
+  function ReadDouble($str, $pos)
+    {
+      $double = unpack('d', strrev(substr($str, $pos, 8)));
+      return $double[1];
     }
 
   function ReadString($str, &$pos)
@@ -1976,7 +1993,7 @@
               $frag = file_get_contents($file . $fileExt);
           if (!isset($opt['flv']))
             {
-              $opt['debug'] = false;
+              $opt['test'] = true;
               $f4f->InitDecoder();
               $f4f->DecodeFragment($frag, $i, $opt);
               if ($filesize)
@@ -1986,7 +2003,7 @@
               if ($metadata)
                   WriteMetadata($f4f, $opt['flv']);
 
-              $opt['debug'] = $debug;
+              $opt['test'] = false;
               $f4f->InitDecoder();
             }
           $f4f->DecodeFragment($frag, $i, $opt);
