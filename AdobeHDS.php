@@ -18,11 +18,11 @@
       protected static $ACCEPTED = array();
       var $params = array();
 
-      function __construct($options = false, $handleUnknown = false)
+      function __construct($options = array(), $handleUnknown = false)
         {
           global $argc, $argv;
 
-          if ($options !== false)
+          if (count($options))
               self::$ACCEPTED = $options;
 
           // Parse params
@@ -101,7 +101,7 @@
       var $mh, $ch, $mrc;
       static $ref = 0;
 
-      function cURL($cookies = true, $cookie = 'Cookies.txt', $compression = 'gzip', $proxy = '')
+      function __construct($cookies = true, $cookie = 'Cookies.txt', $compression = 'gzip', $proxy = '')
         {
           $this->headers     = $this->headers();
           $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:26.0) Gecko/20100101 Firefox/26.0';
@@ -355,7 +355,7 @@
       var $format, $live, $media, $metadata, $outDir, $outFile, $parallel, $play, $processed, $quality, $rename, $video;
       var $prevTagSize, $tagHeaderLen;
       var $segTable, $fragTable, $segNum, $fragNum, $frags, $fragCount, $lastFrag, $fragUrl, $discontinuity;
-      var $prevAudioTS, $prevVideoTS, $pAudioTagLen, $pVideoTagLen, $pAudioTagPos, $pVideoTagPos;
+      var $negTS, $prevAudioTS, $prevVideoTS, $pAudioTagLen, $pVideoTagLen, $pAudioTagPos, $pVideoTagPos;
       var $prevAVC_Header, $prevAAC_Header, $AVC_HeaderWritten, $AAC_HeaderWritten;
 
       function __construct()
@@ -409,7 +409,7 @@
           $this->AAC_HeaderWritten = false;
         }
 
-      function GetManifest($cc, $manifest)
+      function GetManifest(cURL $cc, $manifest)
         {
           $status = $cc->get($manifest);
           if ($status == 403)
@@ -442,7 +442,8 @@
               $baseUrl = substr($baseUrl, 0, strrpos($baseUrl, '/'));
             }
 
-          $url = $xml->xpath("/ns:manifest/ns:media[@*]");
+          $childManifests = array();
+          $url            = $xml->xpath("/ns:manifest/ns:media[@*]");
           if (isset($url[0]['href']))
             {
               $count = 1;
@@ -557,11 +558,9 @@
           LogInfo("Quality Selection:\n Available: " . implode(' ', $bitrates));
 
           // Quality selection
-          if (is_numeric($this->quality) and isset($this->media[$this->quality]))
-            {
-              $key         = $this->quality;
+          $key = $this->quality;
+          if (is_numeric($key) and isset($this->media[$key]))
               $this->media = $this->media[$key];
-            }
           else
             {
               $this->quality = strtolower($this->quality);
@@ -608,7 +607,7 @@
             }
         }
 
-      function UpdateBootstrapInfo($cc, $bootstrapUrl)
+      function UpdateBootstrapInfo(cURL $cc, $bootstrapUrl)
         {
           $fragNum = $this->fragCount;
           $retries = 0;
@@ -675,6 +674,7 @@
           $drmData          = ReadString($bootstrapInfo, $pos);
           $metadata         = ReadString($bootstrapInfo, $pos);
           $segRunTableCount = ReadByte($bootstrapInfo, $pos++);
+          $segTable         = array();
           LogDebug(sprintf("%s:", "Segment Tables"));
           for ($i = 0; $i < $segRunTableCount; $i++)
             {
@@ -685,6 +685,7 @@
               $pos += $boxSize;
             }
           $fragRunTableCount = ReadByte($bootstrapInfo, $pos++);
+          $fragTable         = array();
           LogDebug(sprintf("%s:", "Fragment Tables"));
           for ($i = 0; $i < $fragRunTableCount; $i++)
             {
@@ -845,7 +846,7 @@
           return $lastSegment['firstSegment'];
         }
 
-      function DownloadFragments($cc, $manifest, $opt = array())
+      function DownloadFragments(cURL $cc, $manifest, $opt = array())
         {
           $start = 0;
           extract($opt, EXTR_IF_EXISTS);
@@ -1674,7 +1675,7 @@
       return $flv;
     }
 
-  function WriteMetadata($f4f, $flv = false)
+  function WriteMetadata($f4f, $flv)
     {
       if (isset($f4f->media) and $f4f->media['metadata'])
         {
