@@ -354,7 +354,7 @@
       var $audio, $auth, $baseFilename, $baseTS, $bootstrapUrl, $baseUrl, $debug, $duration, $fileCount, $filesize, $fixWindow;
       var $format, $live, $media, $metadata, $outDir, $outFile, $parallel, $play, $processed, $quality, $rename, $video;
       var $prevTagSize, $tagHeaderLen;
-      var $segTable, $fragTable, $segNum, $fragNum, $frags, $fragCount, $lastFrag, $fragUrl, $discontinuity;
+      var $segTable, $fragTable, $frags, $fragCount, $lastFrag, $fragUrl, $discontinuity;
       var $negTS, $prevAudioTS, $prevVideoTS, $pAudioTagLen, $pVideoTagLen, $pAudioTagPos, $pVideoTagPos;
       var $prevAVC_Header, $prevAAC_Header, $AVC_HeaderWritten, $AAC_HeaderWritten;
 
@@ -1958,8 +1958,8 @@
     }
 
   // Check for available fragments and rename if required
-  if ($f4f->fragNum)
-      $fragNum = $f4f->fragNum;
+  if ($f4f->fragStart)
+      $fragNum = $f4f->fragStart;
   else if ($start)
       $fragNum = $start - 1;
   if ($rename)
