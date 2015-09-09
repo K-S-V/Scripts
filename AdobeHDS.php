@@ -351,8 +351,8 @@
 
   class F4F
     {
-      var $audio, $auth, $baseFilename, $baseTS, $bootstrapUrl, $baseUrl, $debug, $duration, $fileCount, $filesize, $fixWindow;
-      var $format, $live, $media, $metadata, $outDir, $outFile, $parallel, $play, $processed, $quality, $rename, $video;
+      var $audio, $auth, $baseFilename, $baseTS, $bootstrapUrl, $baseUrl, $debug, $decoderTest, $duration, $fileCount, $filesize, $fixWindow;
+      var $format, $live, $media, $metadata, $outDir, $outFile, $parallel, $play, $processed, $quality, $rename, $sessionID, $srt, $video;
       var $prevTagSize, $tagHeaderLen;
       var $segTable, $fragTable, $frags, $fragCount, $lastFrag, $fragUrl, $discontinuity;
       var $negTS, $prevAudioTS, $prevVideoTS, $pAudioTagLen, $pVideoTagLen, $pAudioTagPos, $pVideoTagPos;
@@ -364,6 +364,7 @@
           $this->baseFilename  = "";
           $this->bootstrapUrl  = "";
           $this->debug         = false;
+          $this->decoderTest   = false;
           $this->duration      = 0;
           $this->fileCount     = 1;
           $this->fixWindow     = 1000;
@@ -377,6 +378,7 @@
           $this->processed     = false;
           $this->quality       = "high";
           $this->rename        = false;
+          $this->sessionID     = "";
           $this->segTable      = array();
           $this->fragTable     = array();
           $this->segStart      = false;
@@ -846,8 +848,9 @@
           return $lastSegment['firstSegment'];
         }
 
-      function DownloadFragments(cURL $cc, $manifest, $opt = array())
+      function DownloadFragments($manifest, $opt = array())
         {
+          $cc    = null;
           $start = 0;
           extract($opt, EXTR_IF_EXISTS);
 
@@ -861,10 +864,8 @@
               $this->segStart  = $segNum;
               $this->fragStart = $fragNum;
             }
-          $this->lastFrag  = $fragNum;
-          $opt['cc']       = $cc;
-          $opt['duration'] = 0;
-          $firstFragment   = reset($this->fragTable);
+          $this->lastFrag = $fragNum;
+          $firstFragment  = reset($this->fragTable);
           LogInfo(sprintf("Fragments Total: %s, First: %s, Start: %s, Parallel: %s", $this->fragCount, $firstFragment['firstFragment'], $fragNum + 1, $this->parallel));
 
           // Extract baseFilename
@@ -890,14 +891,20 @@
           LogDebug("Base Fragment Url:\n" . $this->fragUrl . "\n");
           LogDebug("Downloading Fragments:\n");
 
+          $firstFrag = true;
+          $status    = false;
           while (($fragNum < $this->fragCount) or $cc->active)
             {
               while ((count($cc->ch) < $this->parallel) and ($fragNum < $this->fragCount))
                 {
+                  // Download first fragment to determine initial parameters
+                  if ($firstFrag and (count($cc->ch) > 0))
+                      break;
+
                   $frag       = array();
                   $fragNum    = $fragNum + 1;
                   $frag['id'] = $fragNum;
-                  LogInfo("Downloading $fragNum/$this->fragCount fragments", true);
+                  LogInfo("Downloading " . $fragNum . "/" . $this->fragCount . " fragments", true);
                   if (in_array_field($fragNum, "firstFragment", $this->fragTable, true))
                       $this->discontinuity = value_in_array_field($fragNum, "firstFragment", "discontinuityIndicator", $this->fragTable, true);
                   else
@@ -926,7 +933,8 @@
                     }
                   if (isset($frag['response']))
                     {
-                      if ($this->WriteFragment($frag, $opt) === STOP_PROCESSING)
+                      $status = $this->WriteFragment($frag, $opt);
+                      if ($status === STOP_PROCESSING)
                           break 2;
                       else
                           continue;
@@ -934,7 +942,7 @@
 
                   LogDebug("Adding fragment $fragNum to download queue");
                   $segNum = $this->GetSegmentFromFragment($fragNum);
-                  $cc->addDownload($this->fragUrl . "Seg" . $segNum . "-Frag" . $fragNum . $this->media['queryString'], $fragNum);
+                  $cc->addDownload($this->fragUrl . "Seg" . $segNum . "-Frag" . $fragNum . $this->sessionID . $this->media['queryString'], $fragNum);
                 }
 
               $downloads = $cc->checkDownloads();
@@ -953,6 +961,7 @@
                               if (!($this->live or $this->play))
                                   file_put_contents($this->baseFilename . $download['id'], $download['response']);
                               $frag['response'] = $download['response'];
+                              $firstFrag        = false;
                             }
                           else
                             {
@@ -987,7 +996,8 @@
                           if ($this->live and ($fragNum >= $this->fragCount) and ($i + 1 == count($downloads)) and !$cc->active)
                             {
                               LogDebug("Trying to resync with latest available fragment");
-                              if ($this->WriteFragment($frag, $opt) === STOP_PROCESSING)
+                              $status = $this->WriteFragment($frag, $opt);
+                              if ($status === STOP_PROCESSING)
                                   break 2;
                               unset($frag['response']);
                               $this->UpdateBootstrapInfo($cc, $this->bootstrapUrl);
@@ -996,8 +1006,11 @@
                             }
                         }
                       if (isset($frag['response']))
-                          if ($this->WriteFragment($frag, $opt) === STOP_PROCESSING)
+                        {
+                          $status = $this->WriteFragment($frag, $opt);
+                          if ($status === STOP_PROCESSING)
                               break 2;
+                        }
                     }
                   unset($downloads, $download);
                 }
@@ -1005,7 +1018,8 @@
                   $this->UpdateBootstrapInfo($cc, $this->bootstrapUrl);
             }
 
-          LogInfo("");
+          if ($status === true)
+              LogInfo("");
           LogDebug("\nAll fragments downloaded successfully\n");
           $cc->stopDownloads();
           $this->processed = true;
@@ -1040,14 +1054,16 @@
 
       function DecodeFragment($frag, $fragNum, $opt = array())
         {
-          $debug = $this->debug;
-          $flv   = false;
-          $test  = false;
+          $cc       = null;
+          $flvFile  = null;
+          $flvWrite = true;
           extract($opt, EXTR_IF_EXISTS);
-          if ($test)
+          $debug = $this->debug;
+          if ($this->decoderTest)
               $debug = false;
 
           $flvData  = "";
+          $flvTag   = "";
           $fragPos  = 0;
           $packetTS = 0;
           $fragLen  = strlen($frag);
@@ -1079,6 +1095,8 @@
               if ($packetTS & 0x80000000)
                   $packetTS &= 0x7FFFFFFF;
               $totalTagLen = $this->tagHeaderLen + $packetSize + $this->prevTagSize;
+              $tagHeader   = substr($frag, $fragPos, $this->tagHeaderLen);
+              $tagData     = substr($frag, $fragPos + $this->tagHeaderLen, $packetSize);
 
               // Try to fix the odd timestamps and make them zero based
               $currentTS = $packetTS;
@@ -1128,18 +1146,18 @@
                     }
                 }
               if ($packetTS != $currentTS)
-                  WriteFlvTimestamp($frag, $fragPos, $packetTS);
+                  WriteFlvTimestamp($tagHeader, 0, $packetTS);
 
               switch ($packetType)
               {
                   case AUDIO:
                       if ($packetTS > $this->prevAudioTS - $this->fixWindow)
                         {
-                          $FrameInfo = ReadByte($frag, $fragPos + $this->tagHeaderLen);
+                          $FrameInfo = ReadByte($tagData, 0);
                           $CodecID   = ($FrameInfo & 0xF0) >> 4;
                           if ($CodecID == CODEC_ID_AAC)
                             {
-                              $AAC_PacketType = ReadByte($frag, $fragPos + $this->tagHeaderLen + 1);
+                              $AAC_PacketType = ReadByte($tagData, 1);
                               if ($AAC_PacketType == AAC_SEQUENCE_HEADER)
                                 {
                                   if ($this->AAC_HeaderWritten)
@@ -1167,12 +1185,16 @@
                                     {
                                       LogDebug(sprintf("%s\n" . $this->format, "Fixing audio timestamp", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize), $debug);
                                       $packetTS += (FRAMEFIX_STEP / 5) + ($this->prevAudioTS - $packetTS);
-                                      WriteFlvTimestamp($frag, $fragPos, $packetTS);
+                                      WriteFlvTimestamp($tagHeader, 0, $packetTS);
                                     }
-                              if (is_resource($flv))
+                              $flvTag    = $tagHeader . $tagData;
+                              $flvTagLen = strlen($flvTag);
+                              WriteInt32($flvTag, $flvTagLen, $flvTagLen);
+                              $flvTagLen = strlen($flvTag);
+                              if ($flvWrite and is_resource($flvFile))
                                 {
-                                  $this->pAudioTagPos = ftell($flv);
-                                  $status             = fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
+                                  $this->pAudioTagPos = ftell($flvFile);
+                                  $status             = fwrite($flvFile, $flvTag, $flvTagLen);
                                   if (!$status)
                                       LogError("Failed to write flv data to file");
                                   if ($debug)
@@ -1180,7 +1202,7 @@
                                 }
                               else
                                 {
-                                  $flvData .= substr($frag, $fragPos, $totalTagLen);
+                                  $flvData .= $flvTag;
                                   if ($debug)
                                       LogDebug(sprintf($this->format, "AUDIO", $packetTS, $this->prevAudioTS, $packetSize));
                                 }
@@ -1189,20 +1211,20 @@
                               else
                                   $this->prevAAC_Header = false;
                               $this->prevAudioTS  = $packetTS;
-                              $this->pAudioTagLen = $totalTagLen;
+                              $this->pAudioTagLen = $flvTagLen;
                             }
                           else
                               LogDebug(sprintf("%s\n" . $this->format, "Skipping small sized audio packet", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize), $debug);
                         }
                       else
-                          LogDebug(sprintf("%s\n" . $this->format, "Skipping audio packet in fragment $fragNum", "AUDIO", $packetTS, $this->prevAudioTS, $packetSize), $debug);
+                          LogDebug(sprintf("%s\n" . $this->format, "Skipping audio packet in fragment " . $fragNum, "AUDIO", $packetTS, $this->prevAudioTS, $packetSize), $debug);
                       if (!$this->audio)
                           $this->audio = true;
                       break;
                   case VIDEO:
                       if ($packetTS > $this->prevVideoTS - $this->fixWindow)
                         {
-                          $FrameInfo = ReadByte($frag, $fragPos + $this->tagHeaderLen);
+                          $FrameInfo = ReadByte($tagData, 0);
                           $FrameType = ($FrameInfo & 0xF0) >> 4;
                           $CodecID   = $FrameInfo & 0x0F;
                           if ($FrameType == FRAME_TYPE_INFO)
@@ -1212,7 +1234,7 @@
                             }
                           if ($CodecID == CODEC_ID_AVC)
                             {
-                              $AVC_PacketType = ReadByte($frag, $fragPos + $this->tagHeaderLen + 1);
+                              $AVC_PacketType = ReadByte($tagData, 1);
                               if ($AVC_PacketType == AVC_SEQUENCE_HEADER)
                                 {
                                   if ($this->AVC_HeaderWritten)
@@ -1237,7 +1259,7 @@
                               $pts = $packetTS;
                               if (($CodecID == CODEC_ID_AVC) and ($AVC_PacketType == AVC_NALU))
                                 {
-                                  $cts = ReadInt24($frag, $fragPos + $this->tagHeaderLen + 2);
+                                  $cts = ReadInt24($tagData, 2);
                                   $cts = ($cts + 0xff800000) ^ 0xff800000;
                                   $pts = $packetTS + $cts;
                                   if ($cts != 0)
@@ -1250,12 +1272,16 @@
                                     {
                                       LogDebug(sprintf("%s\n" . $this->format, "Fixing video timestamp", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize), $debug);
                                       $packetTS += (FRAMEFIX_STEP / 5) + ($this->prevVideoTS - $packetTS);
-                                      WriteFlvTimestamp($frag, $fragPos, $packetTS);
+                                      WriteFlvTimestamp($tagHeader, 0, $packetTS);
                                     }
-                              if (is_resource($flv))
+                              $flvTag    = $tagHeader . $tagData;
+                              $flvTagLen = strlen($flvTag);
+                              WriteInt32($flvTag, $flvTagLen, $flvTagLen);
+                              $flvTagLen = strlen($flvTag);
+                              if ($flvWrite and is_resource($flvFile))
                                 {
-                                  $this->pVideoTagPos = ftell($flv);
-                                  $status             = fwrite($flv, substr($frag, $fragPos, $totalTagLen), $totalTagLen);
+                                  $this->pVideoTagPos = ftell($flvFile);
+                                  $status             = fwrite($flvFile, $flvTag, $flvTagLen);
                                   if (!$status)
                                       LogError("Failed to write flv data to file");
                                   if ($debug)
@@ -1263,7 +1289,7 @@
                                 }
                               else
                                 {
-                                  $flvData .= substr($frag, $fragPos, $totalTagLen);
+                                  $flvData .= $flvTag;
                                   if ($debug)
                                       LogDebug(sprintf($this->format, "VIDEO", $packetTS, $this->prevVideoTS, $packetSize));
                                 }
@@ -1272,13 +1298,13 @@
                               else
                                   $this->prevAVC_Header = false;
                               $this->prevVideoTS  = $packetTS;
-                              $this->pVideoTagLen = $totalTagLen;
+                              $this->pVideoTagLen = $flvTagLen;
                             }
                           else
                               LogDebug(sprintf("%s\n" . $this->format, "Skipping small sized video packet", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize), $debug);
                         }
                       else
-                          LogDebug(sprintf("%s\n" . $this->format, "Skipping video packet in fragment $fragNum", "VIDEO", $packetTS, $this->prevVideoTS, $packetSize), $debug);
+                          LogDebug(sprintf("%s\n" . $this->format, "Skipping video packet in fragment " . $fragNum, "VIDEO", $packetTS, $this->prevVideoTS, $packetSize), $debug);
                       if (!$this->video)
                           $this->video = true;
                       break;
@@ -1298,9 +1324,9 @@
               $fragPos += $totalTagLen;
             }
           $this->duration = round($packetTS / 1000, 0);
-          if (is_resource($flv))
+          if ($flvWrite and is_resource($flvFile))
             {
-              $this->filesize = ftell($flv) / (1024 * 1024);
+              $this->filesize = ftell($flvFile) / (1024 * 1024);
               return true;
             }
           else
@@ -1310,6 +1336,10 @@
       function WriteFragment($download, &$opt)
         {
           $this->frags[$download['id']] = $download;
+          if (!isset($opt['flvWrite']))
+              $opt['flvWrite'] = true;
+          if ($this->play)
+              $opt['flvWrite'] = false;
 
           $available = count($this->frags);
           for ($i = 0; $i < $available; $i++)
@@ -1320,9 +1350,9 @@
                   if ($frag['response'] !== false)
                     {
                       LogDebug("Writing fragment " . $frag['id'] . " to flv file");
-                      if (!isset($opt['file']))
+                      if (!isset($opt['flvFile']))
                         {
-                          $opt['test'] = true;
+                          $this->decoderTest = true;
                           if ($this->play)
                               $outFile = STDOUT;
                           else if ($this->outFile)
@@ -1341,21 +1371,24 @@
                             }
                           $this->InitDecoder();
                           $this->DecodeFragment($frag['response'], $frag['id'], $opt);
-                          $opt['file'] = WriteFlvFile($outFile, $this->audio, $this->video);
+                          $opt['flvFile'] = WriteFlvFile($outFile, $this->audio, $this->video);
                           if ($this->metadata)
-                              WriteMetadata($this, $opt['file']);
+                              WriteMetadata($this, $opt['flvFile']);
 
-                          $opt['test'] = false;
+                          $this->decoderTest = false;
                           $this->InitDecoder();
                         }
-                      $flvData = $this->DecodeFragment($frag['response'], $frag['id'], $opt);
-                      if (strlen($flvData))
+                      if ($opt['flvWrite'])
+                          $this->DecodeFragment($frag['response'], $frag['id'], $opt);
+                      else
                         {
-                          $status = fwrite($opt['file'], $flvData, strlen($flvData));
-                          if (!$status)
-                              LogError("Failed to write flv data");
-                          if (!$this->play)
-                              $this->filesize = ftell($opt['file']) / (1024 * 1024);
+                          $flvData = $this->DecodeFragment($frag['response'], $frag['id'], $opt);
+                          if (strlen($flvData) > 0)
+                            {
+                              $status = fwrite($opt['flvFile'], $flvData, strlen($flvData));
+                              if (!$status)
+                                  LogError("Failed to write flv data");
+                            }
                         }
                       $this->lastFrag = $frag['id'];
                     }
@@ -1372,15 +1405,15 @@
               if ($opt['tDuration'] and (($opt['duration'] + $this->duration) >= $opt['tDuration']))
                 {
                   LogInfo("");
-                  LogInfo(($opt['duration'] + $this->duration) . " seconds of content has been recorded successfully.", true);
+                  LogInfo(($opt['duration'] + $this->duration) . " seconds of content has been recorded successfully.");
                   return STOP_PROCESSING;
                 }
               if ($opt['filesize'] and ($this->filesize >= $opt['filesize']))
                 {
                   $this->filesize = 0;
                   $opt['duration'] += $this->duration;
-                  fclose($opt['file']);
-                  unset($opt['file']);
+                  fclose($opt['flvFile']);
+                  unset($opt['flvFile']);
                 }
             }
 
@@ -1659,7 +1692,7 @@
 
   function WriteFlvFile($outFile, $audio = true, $video = true)
     {
-      $flvHeader    = pack("H*", "464c5601050000000900000000");
+      $flvHeader    = unhexlify("464c5601050000000900000000");
       $flvHeaderLen = strlen($flvHeader);
 
       // Set proper Audio/Video marker
@@ -1698,6 +1731,12 @@
       return false;
     }
 
+  function hexlify($str)
+    {
+      $str = unpack("H*", $str);
+      return $str[1];
+    }
+
   function in_array_field($needle, $needle_field, $haystack, $strict = false)
     {
       if ($strict)
@@ -1713,6 +1752,11 @@
                   return true;
         }
       return false;
+    }
+
+  function unhexlify($str)
+    {
+      return pack("H*", $str);
     }
 
   function value_in_array_field($needle, $needle_field, $value_field, $haystack, $strict = false)
@@ -1928,15 +1972,17 @@
       $metadata = false;
 
   // Download fragments when manifest is available
+  $opt = array(
+      'cc' => $cc,
+      'duration' => 0,
+      'filesize' => $filesize,
+      'start' => $start,
+      'tDuration' => $duration
+  );
   if ($manifest)
     {
       $manifest = AbsoluteUrl("http://", $manifest);
-      $opt      = array(
-          'start' => $start,
-          'tDuration' => $duration,
-          'filesize' => $filesize
-      );
-      $f4f->DownloadFragments($cc, $manifest, $opt);
+      $f4f->DownloadFragments($manifest, $opt);
     }
 
   // Determine output filename
@@ -1976,51 +2022,36 @@
           break;
       $count++;
     }
-  LogInfo("Found $fragCount fragments");
+  if (!($f4f->live or $f4f->play))
+      LogInfo("Found $fragCount fragments");
 
   if (!$f4f->processed)
     {
       // Process available fragments
       if ($fragCount < 1)
           exit(1);
-      $timeStart = microtime(true);
+      $f4f->lastFrag = $fragNum;
+      $timeStart     = microtime(true);
       LogDebug("Joining Fragments:");
+      $count = 0;
       for ($i = $fragNum + 1; $i <= $fragNum + $fragCount; $i++)
         {
-          $file = $baseFilename . $i;
+          $frag['id'] = $i;
+          $file       = $baseFilename . $i;
           if (file_exists($file))
-              $frag = file_get_contents($file);
+              $frag['response'] = file_get_contents($file);
           else if (file_exists($file . $fileExt))
-              $frag = file_get_contents($file . $fileExt);
-          if (!isset($opt['flv']))
-            {
-              $opt['test'] = true;
-              $f4f->InitDecoder();
-              $f4f->DecodeFragment($frag, $i, $opt);
-              if ($filesize)
-                  $opt['flv'] = WriteFlvFile(JoinUrl($outDir, $outFile . '-' . $fileCount++ . ".flv"), $f4f->audio, $f4f->video);
-              else
-                  $opt['flv'] = WriteFlvFile(JoinUrl($outDir, $outFile . ".flv"), $f4f->audio, $f4f->video);
-              if ($metadata)
-                  WriteMetadata($f4f, $opt['flv']);
-
-              $opt['test'] = false;
-              $f4f->InitDecoder();
-            }
-          $f4f->DecodeFragment($frag, $i, $opt);
-          if ($filesize and ($f4f->filesize >= $filesize))
-            {
-              $f4f->filesize = 0;
-              fclose($opt['flv']);
-              unset($opt['flv']);
-            }
-          LogInfo("Processed " . ($i - $fragNum) . " fragments", true);
+              $frag['response'] = file_get_contents($file . $fileExt);
+          $count++;
+          LogInfo("Processed " . $count . " fragments", true);
+          if ($f4f->WriteFragment($frag, $opt) === STOP_PROCESSING)
+              break;
         }
-      if (isset($opt['flv']))
-          fclose($opt['flv']);
+      if (isset($opt['flvFile']))
+          fclose($opt['flvFile']);
       $timeEnd   = microtime(true);
       $timeTaken = sprintf("%.2f", $timeEnd - $timeStart);
-      LogInfo("Joined $fragCount fragments in $timeTaken seconds");
+      LogInfo("Joined " . $count . " fragments in $timeTaken seconds");
     }
 
   // Delete fragments after processing
