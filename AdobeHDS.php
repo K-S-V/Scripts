@@ -1,6 +1,8 @@
 <?php
   define('AUDIO', 0x08);
   define('VIDEO', 0x09);
+  define('AKAMAI_ENC_AUDIO', 0x0A);
+  define('AKAMAI_ENC_VIDEO', 0x0B);
   define('SCRIPT_DATA', 0x12);
   define('FRAME_TYPE_INFO', 0x05);
   define('CODEC_ID_AVC', 0x07);
@@ -346,6 +348,135 @@
       function error($error)
         {
           LogError("cURL Error : $error");
+        }
+    }
+
+  class AkamaiDecryptor
+    {
+      var $ecmID, $ecmTimestamp, $ecmVersion, $kdfVersion, $dccAccReserved, $prevEcmID;
+      var $aes_cbc, $debug, $decryptBytes, $decryptorTest, $sessionKey, $sessionKeyUrl, $packetIV, $packetKey, $packetSalt, $saltAesKey;
+
+      function __construct()
+        {
+          $this->aes_cbc       = mcrypt_module_open('rijndael-128', '', 'cbc', '');
+          $this->debug         = false;
+          $this->decryptorTest = false;
+          $this->sessionKey    = "";
+          $this->sessionKeyUrl = "";
+          $this->InitDecryptor();
+        }
+
+      function InitDecryptor()
+        {
+          $this->dccAccReserved = null;
+          $this->decryptBytes   = 0;
+          $this->ecmID          = null;
+          $this->ecmTimestamp   = null;
+          $this->ecmVersion     = null;
+          $this->kdfVersion     = null;
+          $this->packetIV       = null;
+          $this->prevEcmID      = null;
+          $this->saltAesKey     = null;
+        }
+
+      function KDF()
+        {
+          $debug = $this->debug;
+          if ($this->decryptorTest)
+              $debug = false;
+
+          // KDF constants
+          $hmacKey   = unhexlify("3b27bdc9e00fd5995d60a1ee0aa057a9f1416ed085b21762110f1c2204ddf80ec8caab003070fd43baafdde27aeb3194ece5c1adff406a51185eb5dd7300c058");
+          $hmacData1 = unhexlify("d1ba6371c56ce6b498f1718228b0aa112f24a47bcad757a1d0b3f4c2b8bd637cb8080d9c8e7855b36a85722a60552a6c00");
+          $hmacData2 = unhexlify("d1ba6371c56ce6b498f1718228b0aa112f24a47bcad757a1d0b3f4c2b8bd637cb8080d9c8e7855b36a85722a60552a6c01");
+
+          // Decrypt packet salt
+          if ($this->ecmID !== $this->prevEcmID)
+            {
+              $saltHmacKey = hash_hmac("sha1", $this->sessionKey . $this->packetIV, $hmacKey, true);
+              LogDebug("SaltHmacKey  : " . hexlify($saltHmacKey), $debug);
+              $this->saltAesKey = substr(hash_hmac("sha1", $hmacData1, $saltHmacKey, true), 0, 16);
+              LogDebug("SaltAesKey   : " . hexlify($this->saltAesKey), $debug);
+              $this->prevEcmID = $this->ecmID;
+            }
+          mcrypt_generic_init($this->aes_cbc, $this->saltAesKey, $this->packetIV);
+          LogDebug("EncryptedSalt: " . hexlify($this->packetSalt), $debug);
+          $decryptedSalt = mdecrypt_generic($this->aes_cbc, $this->packetSalt);
+          LogDebug("DecryptedSalt: " . hexlify($decryptedSalt), $debug);
+          mcrypt_generic_deinit($this->aes_cbc);
+          $this->decryptBytes = ReadInt32($decryptedSalt, 0);
+          LogDebug("DecryptBytes : " . $this->decryptBytes, $debug);
+          $decryptedSalt = substr($decryptedSalt, 4, 16);
+          LogDebug("DecryptedSalt: " . hexlify($decryptedSalt), $debug);
+
+          // Generate final packet decryption key
+          $finalHmacKey = hash_hmac("sha1", $decryptedSalt, $hmacKey, true);
+          LogDebug("FinalHmacKey : " . hexlify($finalHmacKey), $debug);
+          $this->packetKey = substr(hash_hmac("sha1", $hmacData2, $finalHmacKey, true), 0, 16);
+          LogDebug("PacketKey    : " . hexlify($this->packetKey), $debug);
+        }
+
+      function Decrypt($data, $pos)
+        {
+          $debug = $this->debug;
+          if ($this->decryptorTest)
+              $debug = false;
+          LogDebug("\n----- Akamai Decryption Start -----", $debug);
+
+          // Parse packet header
+          $byte             = ReadByte($data, $pos++);
+          $this->ecmVersion = $byte >> 4;
+          if ($this->ecmVersion != 11)
+              $this->ecmVersion = $byte;
+          $this->ecmID        = ReadInt32($data, $pos);
+          $this->ecmTimestamp = ReadInt32($data, $pos + 4);
+          $this->kdfVersion   = ReadInt16($data, $pos + 8);
+          $pos += 10;
+          $this->dccAccReserved = ReadByte($data, $pos++);
+          LogDebug("ECM Version  : " . $this->ecmVersion . ", ECM ID: " . $this->ecmID . ", ECM Timestamp: " . $this->ecmTimestamp . ", KDF Version: " . $this->kdfVersion . ", DccAccReserved: " . $this->dccAccReserved, $debug);
+          LogDebug("SessionKey   : " . hexlify($this->sessionKey), $debug);
+          $byte = ReadByte($data, $pos++);
+          $iv   = (($byte & 2) > 0) ? true : false;
+          $key  = (($byte & 4) > 0) ? true : false;
+          if ($iv)
+            {
+              $this->packetIV = substr($data, $pos, 16);
+              $pos += 16;
+              LogDebug("PacketIV     : " . hexlify($this->packetIV), $debug);
+            }
+          if ($key)
+            {
+              $this->sessionKeyUrl = ReadString($data, $pos);
+              LogDebug("SessionKeyUrl: " . $this->sessionKeyUrl, $debug);
+            }
+          $reserved         = ReadByte($data, $pos++);
+          $this->packetSalt = substr($data, $pos, 32);
+          $pos += 32;
+          $reservedBlock1 = substr($data, $pos, 20);
+          $reservedBlock2 = substr($data, $pos + 20, 20);
+          $pos += 40;
+          LogDebug("ReservedByte : " . $reserved . ", ReservedBlock1: " . hexlify($reservedBlock1) . ", ReservedBlock2: " . hexlify($reservedBlock2), $debug);
+
+          // Generate packet decryption key
+          $this->KDF();
+
+          // Decrypt packet data
+          $encryptedData = substr($data, $pos);
+          LogDebug("EncryptedData: " . hexlify(substr($encryptedData, 0, 64)), $debug);
+          $lastBlockData = substr($encryptedData, $this->decryptBytes);
+          $encryptedData = substr($encryptedData, 0, $this->decryptBytes);
+          $decryptedData = "";
+          if ($this->decryptBytes > 0)
+            {
+              mcrypt_generic_init($this->aes_cbc, $this->packetKey, $this->packetIV);
+              $decryptedData = mdecrypt_generic($this->aes_cbc, $encryptedData);
+              mcrypt_generic_deinit($this->aes_cbc);
+            }
+          $decryptedData .= $lastBlockData;
+          LogDebug("DecryptedData: " . hexlify(substr($decryptedData, 0, 64)), $debug);
+
+          LogDebug("----- Akamai Decryption End -----\n", $debug);
+          return $decryptedData;
         }
     }
 
@@ -1054,6 +1185,7 @@
 
       function DecodeFragment($frag, $fragNum, $opt = array())
         {
+          $ad       = null;
           $cc       = null;
           $flvFile  = null;
           $flvWrite = true;
@@ -1085,6 +1217,11 @@
               $fragPos += $boxSize;
             }
 
+          // Initialize akamai decryptor
+          $ad->debug         = $this->debug;
+          $ad->decryptorTest = $this->decoderTest;
+          $ad->InitDecryptor();
+
           LogDebug(sprintf("\nFragment %d:\n" . $this->format . "%-16s", $fragNum, "Type", "CurrentTS", "PreviousTS", "Size", "Position"), $debug);
           while ($fragPos < $fragLen)
             {
@@ -1097,6 +1234,28 @@
               $totalTagLen = $this->tagHeaderLen + $packetSize + $this->prevTagSize;
               $tagHeader   = substr($frag, $fragPos, $this->tagHeaderLen);
               $tagData     = substr($frag, $fragPos + $this->tagHeaderLen, $packetSize);
+
+              // Remove Akamai encryption
+              if (($packetType == AKAMAI_ENC_AUDIO) or ($packetType == AKAMAI_ENC_VIDEO))
+                {
+                  // Download key file if required
+                  if (($ad->sessionKey == "") and ($ad->sessionKeyUrl != ""))
+                    {
+                      $keyUrl          = substr($ad->sessionKeyUrl, strrpos($ad->sessionKeyUrl, '/'));
+                      $this->sessionID = "_" . substr($keyUrl, strlen("/key_"));
+                      $keyUrl          = JoinUrl($this->baseUrl, $keyUrl) . $this->media['queryString'];
+                      if ($cc->get($keyUrl) != 200)
+                          LogError("Failed to download akamai decryption key");
+                      $ad->sessionKey = $cc->response;
+                      LogInfo("SessionKey: " . hexlify($ad->sessionKey), $debug);
+                    }
+
+                  $tagData    = $ad->Decrypt($tagData, 0, $debug);
+                  $packetType = ($packetType == AKAMAI_ENC_AUDIO ? AUDIO : VIDEO);
+                  $packetSize = strlen($tagData);
+                  WriteByte($tagHeader, 0, $packetType);
+                  WriteInt24($tagHeader, 1, $packetSize);
+                }
 
               // Try to fix the odd timestamps and make them zero based
               $currentTS = $packetTS;
@@ -1311,9 +1470,7 @@
                   case SCRIPT_DATA:
                       break;
                   default:
-                      if (($packetType == 10) or ($packetType == 11))
-                          LogError("This stream is encrypted with Akamai DRM. Decryption of such streams isn't currently possible with this script.", 2);
-                      else if (($packetType == 40) or ($packetType == 41))
+                      if (($packetType == 40) or ($packetType == 41))
                           LogError("This stream is encrypted with FlashAccess DRM. Decryption of such streams isn't currently possible with this script.", 2);
                       else
                         {
@@ -1812,6 +1969,7 @@
           'update' => 'update the script to current git version'
       ),
       1 => array(
+          'adkey' => 'akamai session decryption key',
           'auth' => 'authentication string for fragment requests',
           'duration' => 'stop recording after specified number of seconds',
           'filesize' => 'split output file in chunks of specified size (MB)',
@@ -1862,6 +2020,7 @@
 
   // Initialize classes
   $cc  = new cURL();
+  $ad  = new AkamaiDecryptor();
   $f4f = new F4F();
 
   $f4f->baseFilename =& $baseFilename;
@@ -1887,6 +2046,8 @@
       $rename = $cli->getParam('rename');
   if ($cli->getParam('update'))
       $update = true;
+  if ($cli->getParam('adkey'))
+      $ad->sessionKey = unhexlify($cli->getParam('adkey'));
   if ($cli->getParam('auth'))
       $f4f->auth = '?' . $cli->getParam('auth');
   if ($cli->getParam('duration'))
@@ -1973,6 +2134,7 @@
 
   // Download fragments when manifest is available
   $opt = array(
+      'ad' => $ad,
       'cc' => $cc,
       'duration' => 0,
       'filesize' => $filesize,
