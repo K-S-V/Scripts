@@ -354,13 +354,16 @@
   class AkamaiDecryptor
     {
       var $ecmID, $ecmTimestamp, $ecmVersion, $kdfVersion, $dccAccReserved, $prevEcmID;
-      var $aes_cbc, $debug, $decryptBytes, $decryptorTest, $sessionKey, $sessionKeyUrl, $packetIV, $packetKey, $packetSalt, $saltAesKey;
+      var $aes_cbc, $debug, $decryptBytes, $decryptorTest, $lastKeyUrl, $sessionID, $sessionKey, $sessionKeyUrl;
+      var $packetIV, $packetKey, $packetSalt, $saltAesKey;
 
       function __construct()
         {
           $this->aes_cbc       = mcrypt_module_open('rijndael-128', '', 'cbc', '');
           $this->debug         = false;
           $this->decryptorTest = false;
+          $this->lastKeyUrl    = "";
+          $this->sessionID     = "";
           $this->sessionKey    = "";
           $this->sessionKeyUrl = "";
           $this->InitDecryptor();
@@ -416,8 +419,12 @@
           LogDebug("PacketKey    : " . hexlify($this->packetKey), $debug);
         }
 
-      function Decrypt($data, $pos)
+      function Decrypt($data, $pos, $opt = array())
         {
+          $auth    = "";
+          $baseUrl = "";
+          $cc      = null;
+          extract($opt, EXTR_IF_EXISTS);
           $debug = $this->debug;
           if ($this->decryptorTest)
               $debug = false;
@@ -434,7 +441,6 @@
           $pos += 10;
           $this->dccAccReserved = ReadByte($data, $pos++);
           LogDebug("ECM Version  : " . $this->ecmVersion . ", ECM ID: " . $this->ecmID . ", ECM Timestamp: " . $this->ecmTimestamp . ", KDF Version: " . $this->kdfVersion . ", DccAccReserved: " . $this->dccAccReserved, $debug);
-          LogDebug("SessionKey   : " . hexlify($this->sessionKey), $debug);
           $byte = ReadByte($data, $pos++);
           $iv   = (($byte & 2) > 0) ? true : false;
           $key  = (($byte & 4) > 0) ? true : false;
@@ -448,7 +454,26 @@
             {
               $this->sessionKeyUrl = ReadString($data, $pos);
               LogDebug("SessionKeyUrl: " . $this->sessionKeyUrl, $debug);
+              $keyUrl          = substr($this->sessionKeyUrl, strrpos($this->sessionKeyUrl, '/'));
+              $this->sessionID = "_" . substr($keyUrl, strlen("/key_"));
+              $keyUrl          = JoinUrl($baseUrl, $keyUrl) . $auth;
+
+              // Download key file if required
+              if ($this->sessionKeyUrl !== $this->lastKeyUrl)
+                {
+                  if ($baseUrl == "")
+                      LogDebug("Unable to download session key without manifest url. you must specify it manually using 'adkey' switch.", $debug);
+                  else
+                    {
+                      if ($cc->get($keyUrl) != 200)
+                          LogError("Failed to download akamai session decryption key");
+                      $this->sessionKey = $cc->response;
+                      LogInfo("SessionKey: " . hexlify($this->sessionKey), $debug);
+                      $this->lastKeyUrl = $this->sessionKeyUrl;
+                    }
+                }
             }
+          LogDebug("SessionKey   : " . hexlify($this->sessionKey), $debug);
           $reserved         = ReadByte($data, $pos++);
           $this->packetSalt = substr($data, $pos, 32);
           $pos += 32;
@@ -458,6 +483,8 @@
           LogDebug("ReservedByte : " . $reserved . ", ReservedBlock1: " . hexlify($reservedBlock1) . ", ReservedBlock2: " . hexlify($reservedBlock2), $debug);
 
           // Generate packet decryption key
+          if ($this->sessionKey == "")
+              LogError("Fragments can't be decrypted properly without corresponding session key.", 2);
           $this->KDF();
 
           // Decrypt packet data
@@ -482,7 +509,7 @@
 
   class F4F
     {
-      var $audio, $auth, $baseFilename, $baseTS, $bootstrapUrl, $baseUrl, $debug, $decoderTest, $duration, $fileCount, $filesize, $fixWindow;
+      var $audio, $auth, $baseFilename, $baseTS, $baseUrl, $bootstrapUrl, $debug, $decoderTest, $duration, $fileCount, $filesize, $fixWindow;
       var $format, $live, $media, $metadata, $outDir, $outFile, $parallel, $play, $processed, $quality, $rename, $sessionID, $srt, $video;
       var $prevTagSize, $tagHeaderLen;
       var $segTable, $fragTable, $frags, $fragCount, $lastFrag, $fragUrl, $discontinuity;
@@ -493,6 +520,7 @@
         {
           $this->auth          = "";
           $this->baseFilename  = "";
+          $this->baseUrl       = "";
           $this->bootstrapUrl  = "";
           $this->debug         = false;
           $this->decoderTest   = false;
@@ -1186,7 +1214,6 @@
       function DecodeFragment($frag, $fragNum, $opt = array())
         {
           $ad       = null;
-          $cc       = null;
           $flvFile  = null;
           $flvWrite = true;
           extract($opt, EXTR_IF_EXISTS);
@@ -1217,7 +1244,7 @@
               $fragPos += $boxSize;
             }
 
-          // Initialize akamai decryptor
+          // Initialize Akamai decryptor
           $ad->debug         = $this->debug;
           $ad->decryptorTest = $this->decoderTest;
           $ad->InitDecryptor();
@@ -1238,23 +1265,14 @@
               // Remove Akamai encryption
               if (($packetType == AKAMAI_ENC_AUDIO) or ($packetType == AKAMAI_ENC_VIDEO))
                 {
-                  // Download key file if required
-                  if (($ad->sessionKey == "") and ($ad->sessionKeyUrl != ""))
-                    {
-                      $keyUrl          = substr($ad->sessionKeyUrl, strrpos($ad->sessionKeyUrl, '/'));
-                      $this->sessionID = "_" . substr($keyUrl, strlen("/key_"));
-                      $keyUrl          = JoinUrl($this->baseUrl, $keyUrl) . $this->media['queryString'];
-                      if ($cc->get($keyUrl) != 200)
-                          LogError("Failed to download akamai decryption key");
-                      $ad->sessionKey = $cc->response;
-                      LogInfo("SessionKey: " . hexlify($ad->sessionKey), $debug);
-                    }
-
-                  $tagData    = $ad->Decrypt($tagData, 0, $debug);
-                  $packetType = ($packetType == AKAMAI_ENC_AUDIO ? AUDIO : VIDEO);
-                  $packetSize = strlen($tagData);
+                  $opt['auth']    = $this->media['queryString'];
+                  $opt['baseUrl'] = $this->baseUrl;
+                  $tagData        = $ad->Decrypt($tagData, 0, $opt);
+                  $packetType     = ($packetType == AKAMAI_ENC_AUDIO ? AUDIO : VIDEO);
+                  $packetSize     = strlen($tagData);
                   WriteByte($tagHeader, 0, $packetType);
                   WriteInt24($tagHeader, 1, $packetSize);
+                  $this->sessionID = $ad->sessionID;
                 }
 
               // Try to fix the odd timestamps and make them zero based
