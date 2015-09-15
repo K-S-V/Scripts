@@ -2027,12 +2027,13 @@
   $required_extensions = array(
       "bcmath",
       "curl",
+      "mcrypt",
       "SimpleXML"
   );
   $missing_extensions  = array_diff($required_extensions, get_loaded_extensions());
   if ($missing_extensions)
     {
-      $msg = "You have to install the following extension(s) to continue: '" . implode("', '", $missing_extensions) . "'";
+      $msg = "You have to install and enable the following extension(s) to continue: '" . implode("', '", $missing_extensions) . "'";
       LogError($msg);
     }
 
