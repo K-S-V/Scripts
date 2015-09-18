@@ -1710,6 +1710,34 @@
       return NormalizePath($url);
     }
 
+  function GetFragmentList($baseFilename, $fragStart, $fileExt)
+    {
+      $files   = array();
+      $retries = 0;
+      $count   = $fragStart;
+
+      while (true)
+        {
+          if ($retries >= 50)
+              break;
+          $file = $baseFilename . ++$count;
+          if (file_exists($file))
+            {
+              $files[$count] = $file;
+              $retries       = 0;
+            }
+          else if (file_exists($file . $fileExt))
+            {
+              $files[$count] = $file . $fileExt;
+              $retries       = 0;
+            }
+          else
+              $retries++;
+        }
+
+      return $files;
+    }
+
   function GetString($object)
     {
       return trim(strval($object));
@@ -1826,34 +1854,21 @@
       return $outFile;
     }
 
-  function RenameFragments($baseFilename, $fragNum, $fileExt)
+  function RenameFragments($oldFiles, $baseFilename)
     {
-      $files   = array();
-      $retries = 0;
+      $newFiles = array();
+      $count    = 0;
 
-      while (true)
+      foreach ($oldFiles as $oldFile)
         {
-          if ($retries >= 50)
-              break;
-          $file = $baseFilename . ++$fragNum;
-          if (file_exists($file))
-            {
-              $files[] = $file;
-              $retries = 0;
-            }
-          else if (file_exists($file . $fileExt))
-            {
-              $files[] = $file . $fileExt;
-              $retries = 0;
-            }
-          else
-              $retries++;
+          $count++;
+          $newFile = $baseFilename . $count;
+          if (!rename($oldFile, $newFile))
+              LogError("Failed to rename fragment from '" . $oldFile . "' to '" . $newFile . "'");
+          $newFiles[$count] = $newFile;
         }
 
-      $fragCount = count($files);
-      natsort($files);
-      for ($i = 0; $i < $fragCount; $i++)
-          rename($files[$i], $baseFilename . ($i + 1));
+      return $newFiles;
     }
 
   function ShowHeader()
@@ -1957,12 +1972,12 @@
   $debug        = false;
   $duration     = 0;
   $delete       = false;
-  $fileExt      = ".f4f";
   $fileCount    = 1;
+  $fileExt      = ".f4f";
   $filesize     = 0;
   $fixWindow    = 1000;
   $fragCount    = 0;
-  $fragNum      = 0;
+  $fragStart    = 0;
   $manifest     = "";
   $maxSpeed     = 0;
   $metadata     = true;
@@ -2186,65 +2201,51 @@
 
   // Check for available fragments and rename if required
   if ($f4f->fragStart)
-      $fragNum = $f4f->fragStart;
+      $fragStart = $f4f->fragStart;
   else if ($start)
-      $fragNum = $start - 1;
+      $fragStart = $start - 1;
+  $files = GetFragmentList($baseFilename, $fragStart, $fileExt);
   if ($rename)
     {
-      RenameFragments($baseFilename, $fragNum, $fileExt);
-      $fragNum = 0;
+      $files     = RenameFragments($files, $baseFilename);
+      $fragStart = 0;
     }
-  $count = $fragNum + 1;
-  while (true)
-    {
-      if (file_exists($baseFilename . $count) or file_exists($baseFilename . $count . $fileExt))
-          $fragCount++;
-      else
-          break;
-      $count++;
-    }
+  $fragCount = count($files);
   if (!($f4f->live or $f4f->play))
-      LogInfo("Found $fragCount fragments");
+      LogInfo("Found " . $fragCount . " fragments");
 
+  // Process available fragments
   if (!$f4f->processed)
     {
-      // Process available fragments
       if ($fragCount < 1)
           exit(1);
-      $f4f->lastFrag = $fragNum;
+      $f4f->lastFrag = $fragStart;
       $timeStart     = microtime(true);
       LogDebug("Joining Fragments:");
       $count = 0;
-      for ($i = $fragNum + 1; $i <= $fragNum + $fragCount; $i++)
+      foreach ($files as $id => $file)
         {
-          $frag['id'] = $i;
-          $file       = $baseFilename . $i;
-          if (file_exists($file))
-              $frag['response'] = file_get_contents($file);
-          else if (file_exists($file . $fileExt))
-              $frag['response'] = file_get_contents($file . $fileExt);
-          $count++;
-          LogInfo("Processed " . $count . " fragments", true);
+          $frag['id']       = $id;
+          $frag['response'] = file_get_contents($file);
+          LogInfo("Processed " . (++$count) . " fragments", true);
           if ($f4f->WriteFragment($frag, $opt) === STOP_PROCESSING)
               break;
         }
+      unset($id, $file);
       if (isset($opt['flvFile']))
           fclose($opt['flvFile']);
       $timeEnd   = microtime(true);
       $timeTaken = sprintf("%.2f", $timeEnd - $timeStart);
-      LogInfo("Joined " . $count . " fragments in $timeTaken seconds");
+      LogInfo("Joined " . $count . " fragments in " . $timeTaken . " seconds");
     }
 
   // Delete fragments after processing
   if ($delete)
     {
-      for ($i = $fragNum + 1; $i <= $fragNum + $fragCount; $i++)
+      foreach ($files as $file)
         {
-          $file = $baseFilename . $i;
-          if (file_exists($file))
-              unlink($file);
-          else if (file_exists($file . $fileExt))
-              unlink($file . $fileExt);
+          if (!unlink($file))
+              LogInfo("Failed to delete file '" . $file . "'");
         }
     }
 
