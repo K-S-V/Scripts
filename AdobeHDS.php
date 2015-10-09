@@ -106,7 +106,7 @@
       function __construct($cookies = true, $cookie = 'Cookies.txt', $compression = 'gzip', $proxy = '')
         {
           $this->headers     = $this->headers();
-          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:26.0) Gecko/20100101 Firefox/26.0';
+          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:41.0) Gecko/20100101 Firefox/41.0';
           $this->compression = $compression;
           $this->cookies     = $cookies;
           if ($this->cookies == true)
@@ -421,6 +421,7 @@
 
       function Decrypt($data, $pos, $opt = array())
         {
+          /** @var cURL $cc */
           $auth    = "";
           $baseUrl = "";
           $cc      = null;
@@ -524,7 +525,6 @@
           $this->bootstrapUrl  = "";
           $this->debug         = false;
           $this->decoderTest   = false;
-          $this->duration      = 0;
           $this->fileCount     = 1;
           $this->fixWindow     = 1000;
           $this->format        = "";
@@ -552,6 +552,7 @@
       function InitDecoder()
         {
           $this->audio             = false;
+          $this->duration          = 0;
           $this->filesize          = 0;
           $this->video             = false;
           $this->prevTagSize       = 4;
@@ -586,8 +587,9 @@
           return $xml;
         }
 
-      function ParseManifest($cc, $parentManifest)
+      function ParseManifest(cURL $cc, $parentManifest)
         {
+          /** @var SimpleXMLElement $xml */
           LogInfo("Processing manifest info....");
           $xml = $this->GetManifest($cc, $parentManifest);
 
@@ -1009,6 +1011,7 @@
 
       function DownloadFragments($manifest, $opt = array())
         {
+          /** @var cURL $cc */
           $cc    = null;
           $start = 0;
           extract($opt, EXTR_IF_EXISTS);
@@ -1081,13 +1084,13 @@
                     }
                   if ($this->discontinuity !== "")
                     {
-                      LogDebug("Skipping fragment $fragNum due to discontinuity, Type: " . $this->discontinuity);
+                      LogDebug("Skipping fragment " . $fragNum . " due to discontinuity, Type: " . $this->discontinuity);
                       $frag['response'] = false;
                       $this->rename     = true;
                     }
                   else if (file_exists($this->baseFilename . $fragNum))
                     {
-                      LogDebug("Fragment $fragNum is already downloaded");
+                      LogDebug("Fragment " . $fragNum . " is already downloaded");
                       $frag['response'] = file_get_contents($this->baseFilename . $fragNum);
                     }
                   if (isset($frag['response']))
@@ -1099,7 +1102,7 @@
                           continue;
                     }
 
-                  LogDebug("Adding fragment $fragNum to download queue");
+                  LogDebug("Adding fragment " . $fragNum . " to download queue");
                   $segNum = $this->GetSegmentFromFragment($fragNum);
                   $cc->addDownload($this->fragUrl . "Seg" . $segNum . "-Frag" . $fragNum . $this->sessionID . $this->media['queryString'], $fragNum);
                 }
@@ -1229,7 +1232,7 @@
 
           if (!$this->VerifyFragment($frag))
             {
-              LogInfo("Skipping fragment number $fragNum");
+              LogInfo("Skipping fragment number " . $fragNum);
               return false;
             }
 
@@ -1244,7 +1247,10 @@
               $fragPos += $boxSize;
             }
 
-          // Initialize Akamai decryptor
+          /**
+           * Initialize Akamai decryptor
+           * @var AkamaiDecryptor $ad
+           */
           $ad->debug         = $this->debug;
           $ad->decryptorTest = $this->decoderTest;
           $ad->InitDecryptor();
@@ -1492,7 +1498,7 @@
                           LogError("This stream is encrypted with FlashAccess DRM. Decryption of such streams isn't currently possible with this script.", 2);
                       else
                         {
-                          LogInfo("Unknown packet type " . $packetType . " encountered! Unable to process fragment $fragNum");
+                          LogInfo("Unknown packet type " . $packetType . " encountered! Unable to process fragment " . $fragNum);
                           break 2;
                         }
               }
@@ -1577,10 +1583,11 @@
               else
                   break;
 
-              if ($opt['tDuration'] and (($opt['duration'] + $this->duration) >= $opt['tDuration']))
+              $recDuration = $opt['duration'] + $this->duration;
+              if ($opt['tDuration'] and ($recDuration >= $opt['tDuration']))
                 {
                   LogInfo("");
-                  LogInfo(($opt['duration'] + $this->duration) . " seconds of content has been recorded successfully.");
+                  LogInfo($recDuration . " seconds of content has been recorded successfully.");
                   return STOP_PROCESSING;
                 }
               if ($opt['filesize'] and ($this->filesize >= $opt['filesize']))
@@ -2023,7 +2030,7 @@
   $cli     = new CLI($options, true);
 
   // Set large enough memory limit
-  ini_set("memory_limit", "512M");
+  ini_set("memory_limit", "1024M");
 
   // Check if STDOUT is available
   if ($cli->getParam('play'))
@@ -2139,7 +2146,7 @@
   if ($maxSpeed > 0)
     {
       $cc->maxSpeed = ($maxSpeed * 1024) / $f4f->parallel;
-      LogDebug(sprintf("Setting maximum speed to %.2f KB per fragment (overall $maxSpeed KB)", $cc->maxSpeed / 1024));
+      LogDebug(sprintf("Setting maximum speed to %.2f KB per fragment (overall %d KB)", $cc->maxSpeed / 1024, $maxSpeed));
     }
 
   // Create output directory
