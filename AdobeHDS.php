@@ -75,7 +75,7 @@
 
       function displayHelp()
         {
-          LogInfo("You can use script with following switches:\n");
+          LogInfo("You can use the script with following options:\n");
           foreach (self::$ACCEPTED[0] as $key => $value)
               LogInfo(sprintf(" --%-17s %s", $key, $value));
           foreach (self::$ACCEPTED[1] as $key => $value)
@@ -1998,6 +1998,10 @@
   $start        = 0;
   $update       = false;
 
+  // Set large enough memory limit
+  ini_set("memory_limit", "1024M");
+
+  // Initialize command line processing
   $options = array(
       0 => array(
           'help' => 'displays this help',
@@ -2029,20 +2033,12 @@
   );
   $cli     = new CLI($options, true);
 
-  // Set large enough memory limit
-  ini_set("memory_limit", "1024M");
-
   // Check if STDOUT is available
   if ($cli->getParam('play'))
     {
       $play       = true;
       $quiet      = true;
       $showHeader = false;
-    }
-  if ($cli->getParam('help'))
-    {
-      $cli->displayHelp();
-      exit(0);
     }
 
   // Check for required extensions
@@ -2059,20 +2055,17 @@
       LogError($msg);
     }
 
+  // Display help
+  if ($cli->getParam('help'))
+    {
+      $cli->displayHelp();
+      exit(0);
+    }
+
   // Initialize classes
   $cc  = new cURL();
   $ad  = new AkamaiDecryptor();
   $f4f = new F4F();
-
-  $f4f->baseFilename =& $baseFilename;
-  $f4f->debug =& $debug;
-  $f4f->fixWindow =& $fixWindow;
-  $f4f->format =& $format;
-  $f4f->metadata =& $metadata;
-  $f4f->outDir =& $outDir;
-  $f4f->outFile =& $outFile;
-  $f4f->play =& $play;
-  $f4f->rename =& $rename;
 
   // Process command line options
   if (isset($cli->params['unknown']))
@@ -2096,7 +2089,7 @@
   if ($cli->getParam('filesize'))
       $filesize = $cli->getParam('filesize');
   if ($cli->getParam('fixwindow'))
-      $fixWindow = $cli->getParam('fixwindow');
+      $f4f->fixWindow = $cli->getParam('fixwindow');
   if ($cli->getParam('fragments'))
       $baseFilename = $cli->getParam('fragments');
   if ($cli->getParam('manifest'))
@@ -2173,6 +2166,16 @@
   if ($start or $duration or $filesize)
       $metadata = false;
 
+  // Set f4f options
+  $f4f->baseFilename = $baseFilename;
+  $f4f->debug        = $debug;
+  $f4f->format       = $format;
+  $f4f->metadata     = $metadata;
+  $f4f->outDir       = $outDir;
+  $f4f->outFile      = $outFile;
+  $f4f->play         = $play;
+  $f4f->rename       = $rename;
+
   // Download fragments when manifest is available
   $opt = array(
       'ad' => $ad,
@@ -2186,6 +2189,8 @@
     {
       $manifest = AbsoluteUrl("http://", $manifest);
       $f4f->DownloadFragments($manifest, $opt);
+      $baseFilename = $f4f->baseFilename;
+      $rename       = $f4f->rename;
     }
 
   // Determine output filename
@@ -2227,6 +2232,7 @@
       if ($fragCount < 1)
           exit(1);
       $f4f->lastFrag = $fragStart;
+      $f4f->outFile  = $outFile;
       $timeStart     = microtime(true);
       LogDebug("Joining Fragments:");
       $count = 0;
