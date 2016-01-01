@@ -4,11 +4,11 @@
       protected static $ACCEPTED = array();
       var $params = array();
 
-      function __construct($options = false, $handleUnknown = false)
+      function __construct($options = array(), $handleUnknown = false)
         {
           global $argc, $argv;
 
-          if ($options !== false)
+          if (count($options))
               self::$ACCEPTED = $options;
 
           // Parse params
@@ -23,16 +23,16 @@
                   if ($isSwitch)
                       $arg = preg_replace('/^-+/', '', $arg);
 
-                  if ($paramSwitch && $isSwitch)
+                  if ($paramSwitch and $isSwitch)
                       $this->error("[param] expected after '$paramSwitch' switch (" . self::$ACCEPTED[1][$paramSwitch] . ')');
-                  else if (!$paramSwitch && !$isSwitch)
+                  else if (!$paramSwitch and !$isSwitch)
                     {
                       if ($handleUnknown)
                           $this->params['unknown'][] = $arg;
                       else
                           $this->error("'$arg' is an invalid option, use --help to display valid switches.");
                     }
-                  else if (!$paramSwitch && $isSwitch)
+                  else if (!$paramSwitch and $isSwitch)
                     {
                       if (isset($this->params[$arg]))
                           $this->error("'$arg' switch can't occur more than once");
@@ -43,7 +43,7 @@
                       else if (!isset(self::$ACCEPTED[0][$arg]))
                           $this->error("there's no '$arg' switch, use --help to display all switches.");
                     }
-                  else if ($paramSwitch && !$isSwitch)
+                  else if ($paramSwitch and !$isSwitch)
                     {
                       $this->params[$paramSwitch] = $arg;
                       $paramSwitch                = false;
@@ -53,23 +53,22 @@
 
           // Final check
           foreach ($this->params as $k => $v)
-              if (isset(self::$ACCEPTED[1][$k]) && $v === true)
+              if (isset(self::$ACCEPTED[1][$k]) and $v === true)
                   $this->error("[param] expected after '$k' switch (" . self::$ACCEPTED[1][$k] . ')');
         }
 
       function displayHelp()
         {
-          printf("%s:\n\n", "You can use script with following switches");
+          LogInfo("You can use the script with following options:\n");
           foreach (self::$ACCEPTED[0] as $key => $value)
-              printf(" --%-14s%s\n", $key, $value);
+              LogInfo(sprintf(" --%-13s %s", $key, $value));
           foreach (self::$ACCEPTED[1] as $key => $value)
-              printf(" --%-5s%-9s%s\n", $key, " [param]", $value);
+              LogInfo(sprintf(" --%-5s%-8s %s", $key, " [param]", $value));
         }
 
       function error($msg)
         {
-          printf("%s\n", $msg);
-          exit(1);
+          LogError($msg);
         }
 
       function getParam($name)
@@ -90,7 +89,7 @@
       function cURL($cookies = true, $cookie = 'Cookies.txt', $compression = 'gzip', $proxy = '')
         {
           $this->headers     = $this->headers();
-          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:25.0) Gecko/20100101 Firefox/25.0';
+          $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:41.0) Gecko/20100101 Firefox/41.0';
           $this->compression = $compression;
           $this->cookies     = $cookies;
           if ($this->cookies == true)
@@ -210,18 +209,15 @@
 
       function error($error)
         {
-          printf("cURL Error : %s", $error);
-          exit(1);
+          LogError("cURL Error : $error");
         }
     }
 
   function Close($message)
     {
-      global $cli, $windows;
+      global $cli;
       if ($message)
           LogInfo($message);
-      if ($windows)
-          exec("chcp 1252");
       if (!count($cli->params))
           sleep(2);
       exit(0);
@@ -302,6 +298,24 @@
       return key($temp);
     }
 
+  function LogDebug($msg, $display = true)
+    {
+      global $debug, $showHeader;
+      if ($showHeader)
+        {
+          ShowHeader();
+          $showHeader = false;
+        }
+      if ($display and $debug)
+          fwrite(STDERR, $msg . "\n");
+    }
+
+  function LogError($msg, $code = 1)
+    {
+      LogInfo($msg);
+      exit($code);
+    }
+
   function LogIn()
     {
       global $cc, $logged_in, $username, $password;
@@ -316,7 +330,12 @@
 
   function LogInfo($msg, $progress = false)
     {
-      global $quiet;
+      global $quiet, $showHeader;
+      if ($showHeader)
+        {
+          ShowHeader();
+          $showHeader = false;
+        }
       if (!$quiet)
           PrintLine($msg, $progress);
     }
@@ -500,7 +519,6 @@
   $windows = (strncasecmp(php_uname('s'), "Win", 3) == 0 ? true : false);
   if ($windows)
     {
-      exec("chcp 65001");
       if (file_exists("C:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe"))
           $vlc = "C:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe";
       else
