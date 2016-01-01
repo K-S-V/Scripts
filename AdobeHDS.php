@@ -578,7 +578,8 @@
               LogError("Access Denied! Unable to download the manifest.");
           else if ($status != 200)
               LogError("Unable to download the manifest");
-          $xml = simplexml_load_string(trim($cc->response));
+          $xml = preg_replace('/&(?!amp;)/', '&amp;', trim($cc->response));
+          $xml = simplexml_load_string($xml);
           if (!$xml)
               LogError("Failed to load xml");
           $namespace = $xml->getDocNamespaces();
