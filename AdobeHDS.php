@@ -674,7 +674,7 @@
                   $mediaEntry =& $this->media[$bitrate];
 
                   $mediaEntry['baseUrl'] = $baseUrl;
-                  $mediaEntry['url']     = $stream['url'];
+                  $mediaEntry['url']     = preg_replace('/ /', '%20', $stream['url']);
                   if (isRtmpUrl($mediaEntry['baseUrl']) or isRtmpUrl($mediaEntry['url']))
                       LogError("Provided manifest is not a valid HDS manifest");
 
