@@ -455,22 +455,35 @@
             {
               $this->sessionKeyUrl = ReadString($data, $pos);
               LogDebug("SessionKeyUrl: " . $this->sessionKeyUrl, $debug);
-              $keyUrl          = substr($this->sessionKeyUrl, strrpos($this->sessionKeyUrl, '/'));
-              $this->sessionID = "_" . substr($keyUrl, strlen("/key_"));
-              $keyUrl          = JoinUrl($baseUrl, $keyUrl) . $auth;
+              $keyPath = substr($this->sessionKeyUrl, strrpos($this->sessionKeyUrl, '/'));
+              $keyUrl  = JoinUrl($baseUrl, $keyPath) . $auth;
 
               // Download key file if required
               if ($this->sessionKeyUrl !== $this->lastKeyUrl)
                 {
-                  if ($baseUrl == "")
-                      LogDebug("Unable to download session key without manifest url. you must specify it manually using 'adkey' switch.", $debug);
+                  if (!$baseUrl and !$this->sessionKey)
+                      LogError("Unable to download session key without manifest url. you must specify it manually using 'adkey' switch.");
                   else
                     {
-                      if ($cc->get($keyUrl) != 200)
-                          LogError("Failed to download akamai session decryption key");
-                      $this->sessionKey = $cc->response;
-                      LogInfo("SessionKey: " . hexlify($this->sessionKey), $debug);
+                      if ($baseUrl)
+                        {
+                          LogDebug("Downloading new session key from " . $keyUrl, $debug);
+                          $status = $cc->get($keyUrl);
+                          if ($status == 200)
+                            {
+                              $this->sessionID  = "_" . substr($keyPath, strlen("/key_"));
+                              $this->sessionKey = $cc->response;
+                            }
+                          else
+                            {
+                              LogDebug("Failed to download new session key, Status: " . $status, $debug);
+                              $this->sessionID = "";
+                            }
+                        }
                       $this->lastKeyUrl = $this->sessionKeyUrl;
+                      if (!$this->sessionKey)
+                          LogError("Failed to download akamai session decryption key");
+                      LogInfo("SessionKey: " . hexlify($this->sessionKey));
                     }
                 }
             }
@@ -484,7 +497,7 @@
           LogDebug("ReservedByte : " . $reserved . ", ReservedBlock1: " . hexlify($reservedBlock1) . ", ReservedBlock2: " . hexlify($reservedBlock2), $debug);
 
           // Generate packet decryption key
-          if ($this->sessionKey == "")
+          if (!$this->sessionKey)
               LogError("Fragments can't be decrypted properly without corresponding session key.", 2);
           $this->KDF();
 
