@@ -2122,6 +2122,8 @@
       $manifest = $cli->getParam('manifest');
   if ($cli->getParam('maxspeed'))
       $maxSpeed = $cli->getParam('maxspeed');
+  if ($cli->getParam('networkinterface'))
+      $cc->network_interface = $cli->getParam('networkinterface');
   if ($cli->getParam('outdir'))
       $outDir = $cli->getParam('outdir');
   if ($cli->getParam('outfile'))
@@ -2130,8 +2132,6 @@
       $f4f->parallel = $cli->getParam('parallel');
   if ($cli->getParam('proxy'))
       $cc->proxy = $cli->getParam('proxy');
-  if ($cli->getParam('networkinterface'))
-      $cc->network_interface = $cli->getParam('networkinterface');
   if ($cli->getParam('quality'))
       $f4f->quality = $cli->getParam('quality');
   if ($cli->getParam('referrer'))
