@@ -799,25 +799,30 @@
           $cc->headers[] = "Cache-Control: no-cache";
           $cc->headers[] = "Pragma: no-cache";
 
-          while (($fragNum == $this->fragCount) and ($retries < 30))
+          while ($retries < 30)
             {
               $bootstrapPos = 0;
               LogDebug("Updating bootstrap info, Available fragments: " . $this->fragCount);
               $status = $cc->get($bootstrapUrl);
-              if ($status != 200)
-                  LogError("Failed to refresh bootstrap info, Status: " . $status);
-              $bootstrapInfo = $cc->response;
-              ReadBoxHeader($bootstrapInfo, $bootstrapPos, $boxType, $boxSize);
-              if ($boxType == "abst")
-                  $this->ParseBootstrapBox($bootstrapInfo, $bootstrapPos);
+              if ($status == 200)
+                {
+                  $bootstrapInfo = $cc->response;
+                  ReadBoxHeader($bootstrapInfo, $bootstrapPos, $boxType, $boxSize);
+                  if ($boxType == "abst")
+                      $this->ParseBootstrapBox($bootstrapInfo, $bootstrapPos);
+                  else
+                      LogError("Failed to parse bootstrap info");
+                  LogDebug("Update complete, Available fragments: " . $this->fragCount);
+                }
               else
-                  LogError("Failed to parse bootstrap info");
-              LogDebug("Update complete, Available fragments: " . $this->fragCount);
-              if ($fragNum == $this->fragCount)
+                  LogInfo("Failed to refresh bootstrap info, Status: " . $status);
+              if ($this->fragCount <= $fragNum)
                 {
                   LogInfo("Updating bootstrap info, Retries: " . ++$retries, true);
                   usleep(4000000);
                 }
+              else
+                  break;
             }
 
           // Restore original headers
@@ -1734,6 +1739,19 @@
       if (!isHttpUrl($url))
           $url = JoinUrl($baseUrl, $url);
       return NormalizePath($url);
+    }
+
+  function DecodeUrl($url)
+    {
+      $queryPart = strpos($url, '?');
+      if ($queryPart)
+        {
+          $query = substr($url, $queryPart);
+          $url   = rawurldecode(substr($url, 0, $queryPart)) . $query;
+        }
+      else
+          $url = rawurldecode($url);
+      return $url;
     }
 
   function GetFragmentList($baseFilename, $fragStart, $fileExt)
