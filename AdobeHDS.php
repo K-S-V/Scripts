@@ -354,12 +354,25 @@
   class AkamaiDecryptor
     {
       var $ecmID, $ecmTimestamp, $ecmVersion, $kdfVersion, $dccAccReserved, $prevEcmID;
-      var $aes_cbc, $debug, $decryptBytes, $decryptorTest, $lastKeyUrl, $sessionID, $sessionKey, $sessionKeyUrl;
+      var $aes_cbc, $debug, $decryptBytes, $decryptorTest, $encryptor, $lastKeyUrl, $sessionID, $sessionKey, $sessionKeyUrl;
       var $packetIV, $packetKey, $packetSalt, $saltAesKey;
 
       function __construct()
         {
-          $this->aes_cbc       = mcrypt_module_open('rijndael-128', '', 'cbc', '');
+          if (extension_loaded("openssl"))
+            {
+              $this->encryptor = "openssl";
+            }
+          else if (extension_loaded("mcrypt"))
+            {
+              $this->encryptor = "mcrypt";
+              $this->aes_cbc   = mcrypt_module_open('rijndael-128', '', 'cbc', '');
+            }
+          else
+            {
+              $this->encryptor = false;
+              LogInfo("You need to install either 'mcrypt' or 'openssl' extension to decrypt some encrypted streams.");
+            }
           $this->debug         = false;
           $this->decryptorTest = false;
           $this->lastKeyUrl    = "";
@@ -382,6 +395,26 @@
           $this->saltAesKey     = null;
         }
 
+      function AesDecrypt($cipherData, $key, $iv)
+        {
+          $decrypted = "";
+          if ($this->encryptor == "openssl")
+            {
+              $decrypted = openssl_decrypt(base64_encode($cipherData), "aes-128-cbc", $key, OPENSSL_ZERO_PADDING, $iv);
+            }
+          else if ($this->encryptor == "mcrypt")
+            {
+              mcrypt_generic_init($this->aes_cbc, $key, $iv);
+              $decrypted = mdecrypt_generic($this->aes_cbc, $cipherData);
+              mcrypt_generic_deinit($this->aes_cbc);
+            }
+          else
+            {
+              LogError("Failed to find suitable decryption library");
+            }
+          return $decrypted;
+        }
+
       function KDF()
         {
           $debug = $this->debug;
@@ -402,11 +435,9 @@
               LogDebug("SaltAesKey   : " . hexlify($this->saltAesKey), $debug);
               $this->prevEcmID = $this->ecmID;
             }
-          mcrypt_generic_init($this->aes_cbc, $this->saltAesKey, $this->packetIV);
           LogDebug("EncryptedSalt: " . hexlify($this->packetSalt), $debug);
-          $decryptedSalt = mdecrypt_generic($this->aes_cbc, $this->packetSalt);
+          $decryptedSalt = $this->AesDecrypt($this->packetSalt, $this->saltAesKey, $this->packetIV);
           LogDebug("DecryptedSalt: " . hexlify($decryptedSalt), $debug);
-          mcrypt_generic_deinit($this->aes_cbc);
           $this->decryptBytes = ReadInt32($decryptedSalt, 0);
           LogDebug("DecryptBytes : " . $this->decryptBytes, $debug);
           $decryptedSalt = substr($decryptedSalt, 4, 16);
@@ -508,11 +539,7 @@
           $encryptedData = substr($encryptedData, 0, $this->decryptBytes);
           $decryptedData = "";
           if ($this->decryptBytes > 0)
-            {
-              mcrypt_generic_init($this->aes_cbc, $this->packetKey, $this->packetIV);
-              $decryptedData = mdecrypt_generic($this->aes_cbc, $encryptedData);
-              mcrypt_generic_deinit($this->aes_cbc);
-            }
+              $decryptedData = $this->AesDecrypt($encryptedData, $this->packetKey, $this->packetIV);
           $decryptedData .= $lastBlockData;
           LogDebug("DecryptedData: " . hexlify(substr($decryptedData, 0, 64)), $debug);
 
@@ -2081,7 +2108,6 @@
   $required_extensions = array(
       "bcmath",
       "curl",
-      "mcrypt",
       "SimpleXML"
   );
   $missing_extensions  = array_diff($required_extensions, get_loaded_extensions());
