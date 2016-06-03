@@ -98,12 +98,12 @@
 
   class cURL
     {
-      var $headers, $user_agent, $compression, $cookie_file;
+      var $headers, $user_agent, $compression, $cookie_file, $network_interface;
       var $active, $cert_check, $fragProxy, $maxSpeed, $proxy, $response;
       var $mh, $ch, $mrc;
       static $ref = 0;
 
-      function __construct($cookies = true, $cookie = 'Cookies.txt', $compression = 'gzip', $proxy = '')
+      function __construct($cookies = true, $cookie = 'Cookies.txt', $compression = 'gzip', $proxy = '', $network_interface = '')
         {
           $this->headers     = $this->headers();
           $this->user_agent  = 'Mozilla/5.0 (Windows NT 5.1; rv:41.0) Gecko/20100101 Firefox/41.0';
@@ -115,6 +115,7 @@
           $this->fragProxy  = false;
           $this->maxSpeed   = 0;
           $this->proxy      = $proxy;
+          $this->network_interface = $network_interface;
           self::$ref++;
         }
 
@@ -167,6 +168,8 @@
             }
           if ($this->proxy)
               $this->setProxy($process, $this->proxy);
+          if ($this->network_interface)
+              curl_setopt($process, CURLOPT_INTERFACE, $this->network_interface);
           $this->response = curl_exec($process);
           if ($this->response !== false)
               $status = curl_getinfo($process, CURLINFO_HTTP_CODE);
@@ -203,6 +206,8 @@
             }
           if ($this->proxy)
               $this->setProxy($process, $this->proxy);
+          if ($this->network_interface)
+              curl_setopt($process, CURLOPT_INTERFACE, $this->network_interface);
           $return = curl_exec($process);
           curl_close($process);
           return $return;
@@ -263,6 +268,8 @@
             }
           if ($this->fragProxy and $this->proxy)
               $this->setProxy($download['ch'], $this->proxy);
+          if ($this->network_interface)
+              curl_setopt($download['ch'], CURLOPT_INTERFACE, $this->network_interface);
           if ($this->maxSpeed > 0)
               curl_setopt($download['ch'], CURLOPT_MAX_RECV_SPEED_LARGE, $this->maxSpeed);
           curl_multi_add_handle($this->mh, $download['ch']);
@@ -2084,6 +2091,7 @@
           'fixwindow' => 'timestamp gap between frames to consider as timeshift',
           'manifest' => 'manifest file for downloading of fragments',
           'maxspeed' => 'maximum bandwidth consumption (KB) for fragment downloading',
+          'networkinterface' => 'this can be an interface name, an IP address or a host name',
           'outdir' => 'destination folder for output file',
           'outfile' => 'filename to use for output file',
           'parallel' => 'number of fragments to download simultaneously',
@@ -2158,6 +2166,8 @@
       $manifest = $cli->getParam('manifest');
   if ($cli->getParam('maxspeed'))
       $maxSpeed = $cli->getParam('maxspeed');
+  if ($cli->getParam('networkinterface'))
+      $cc->network_interface = $cli->getParam('networkinterface');
   if ($cli->getParam('outdir'))
       $outDir = $cli->getParam('outdir');
   if ($cli->getParam('outfile'))
