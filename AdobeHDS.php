@@ -2129,6 +2129,12 @@
   $ad  = new AkamaiDecryptor();
   $f4f = new F4F();
 
+  // Honor http_proxy environment variable
+  if (isset($_ENV["http_proxy"])) {
+      $cc->proxy = $_ENV["http_proxy"];
+      $cc->fragProxy = true;
+  }
+
   // Process command line options
   if (isset($cli->params['unknown']))
       $baseFilename = $cli->params['unknown'][0];
