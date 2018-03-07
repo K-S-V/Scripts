@@ -115,6 +115,7 @@
           $this->fragProxy  = false;
           $this->maxSpeed   = 0;
           $this->proxy      = $proxy;
+          $this->ch         = array();
           self::$ref++;
         }
 
@@ -400,7 +401,7 @@
           $decrypted = "";
           if ($this->encryptor == "openssl")
             {
-              $decrypted = openssl_decrypt(base64_encode($cipherData), "aes-128-cbc", $key, OPENSSL_ZERO_PADDING, $iv);
+              $decrypted = openssl_decrypt($cipherData, "aes-128-cbc", $key, OPENSSL_RAW_DATA | OPENSSL_ZERO_PADDING, $iv);
             }
           else if ($this->encryptor == "mcrypt")
             {
